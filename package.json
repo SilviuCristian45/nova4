@@ -1,0 +1,27 @@
+{
+  "name": "replog",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=@replog/web",
+    "dev:web": "npm run dev --workspace=@replog/web",
+    "dev:api": "npm run start:dev --workspace=@replog/api",
+    "build": "npm run build --workspace=@replog/shared && npm run build --workspace=@replog/api && npm run build --workspace=@replog/web",
+    "build:shared": "npm run build --workspace=@replog/shared",
+    "build:api": "npm run build --workspace=@replog/api",
+    "build:web": "npm run build --workspace=@replog/web",
+    "start:web": "npm run start --workspace=@replog/web",
+    "start:api": "npm run start:prod --workspace=@replog/api",
+    "test": "npm run test --workspace=@replog/shared && npm run test --workspace=@replog/api && npm run test --workspace=@replog/web",
+    "test:shared": "npm run test --workspace=@replog/shared",
+    "test:api": "npm run test --workspace=@replog/api",
+    "test:api:e2e": "npm run test:e2e --workspace=@replog/api",
+    "test:web": "npm run test --workspace=@replog/web",
+    "typecheck": "npm run typecheck --workspace=@replog/shared && npm run typecheck --workspace=@replog/api && npm run typecheck --workspace=@replog/web",
+    "lint:web": "npm run lint --workspace=@replog/web"
+  }
+}

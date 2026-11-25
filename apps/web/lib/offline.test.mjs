@@ -1,0 +1,268 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import vm from "node:vm";
+import { validOfflinePayload, applyMutation, mergeSnapshot } from "./offline/model.ts";
+import * as errors from "./offline/errors.ts";
+import { rejectedEntryExport } from "./offline/rejected.ts";
+
+const today = "2026-10-19";
+const snapshot = () => ({ ownerId: "alice", downloadedAt: today, workouts: [], steps: [], weights: [] });
+const mutation = (id, payload, ownerId = "alice") => ({ id, payload, ownerId, createdAt: today });
+const strength = {
+  kind: "workout", date: today, mode: "strength", split: "PUSH", cardio: [],
+  sets: [{ split: "PUSH", exercise: "Bench Press", setNumber: 1, reps: 8, weight: 60, rir: 2, setType: "normal", notes: "" }],
+};
+
+test("offline validation accepts valid metrics and complete workouts only", () => {
+  for (const payload of [
+    { kind: "steps", date: today, steps: 0 }, { kind: "weight", date: today, weightKg: 72.35 },
+    strength, { ...strength, mode: "cardio", sets: [], cardio: [{ activity: "Run", durationMin: 20 }] },
+  ]) assert.equal(validOfflinePayload(payload, today), true);
+  for (const payload of [
+    null, {}, { kind: "steps", date: "2026-02-30", steps: 1 },
+    { kind: "steps", date: "2026-10-20", steps: 1 },
+    { kind: "steps", date: today, steps: -1 }, { kind: "steps", date: today, steps: 1.5 },
+    { kind: "steps", date: today, steps: "100" }, { kind: "weight", date: today, weightKg: 70.123 },
+    { kind: "weight", date: today, weightKg: NaN }, { ...strength, sets: [] },
+    { ...strength, sets: [{ ...strength.sets[0], reps: 0 }] },
+    { ...strength, sets: Array(1001).fill(strength.sets[0]) },
+    { ...strength, cardio: [{ activity: "Run", durationMin: 20 }] },
+    // Limits match the table constraints, otherwise the entry could never sync.
+    { ...strength, sets: [{ ...strength.sets[0], rir: 6 }] },
+    { ...strength, sets: [{ ...strength.sets[0], rir: 2.5 }] },
+    { ...strength, sets: [{ ...strength.sets[0], weight: 10000.5 }] },
+    { ...strength, sets: [{ ...strength.sets[0], notes: "x".repeat(100) }] },
+    { ...strength, mode: "cardio", sets: [], cardio: [{ activity: "Run", durationMin: 20.5 }] },
+    { ...strength, mode: "cardio", sets: [], cardio: [{ activity: "Run", durationMin: 0 }] },
+    { ...strength, mode: "cardio", sets: [], cardio: [{ activity: "x".repeat(121), durationMin: 20 }] },
+  ]) assert.equal(validOfflinePayload(payload, today), false, JSON.stringify(payload));
+  for (const payload of [
+    { ...strength, sets: [{ ...strength.sets[0], rir: 5, weight: 10000, notes: "x".repeat(99) }] },
+    { ...strength, mode: "cardio", sets: [], cardio: [{ activity: "Run", durationMin: 1440 }] },
+  ]) assert.equal(validOfflinePayload(payload, today), true, JSON.stringify(payload));
+});
+
+test("queued metrics override downloads in order without mutating source data", () => {
+  const original = snapshot();
+  const queue = [
+    mutation("1", { kind: "steps", date: today, steps: 100 }),
+    mutation("2", { kind: "weight", date: today, weightKg: 70 }),
+    mutation("3", { kind: "steps", date: today, steps: 200 }),
+  ];
+  const merged = mergeSnapshot(original, queue);
+  assert.deepEqual(merged.steps, [{ date: today, steps: 200 }]);
+  assert.deepEqual(merged.weights, [{ date: today, weight_kg: 70 }]);
+  assert.deepEqual(original, snapshot());
+  assert.throws(() => applyMutation(original, mutation("x", queue[0].payload, "bob")), /mismatch/);
+});
+
+test("replaying an optimistic workout keeps exactly one session and its stable ID", () => {
+  const entry = mutation("workout-uuid", strength);
+  const merged = mergeSnapshot(snapshot(), [entry, entry]);
+  assert.equal(merged.workouts.length, 1);
+  assert.equal(merged.workouts[0].id, entry.id);
+  assert.equal(merged.workouts[0].pending, true);
+  assert.equal(merged.workouts[0].workout_sets[0].weight, 60);
+});
+
+function syncHarness(overrides = {}) {
+  const require = createRequire(import.meta.url);
+  const ts = require("typescript");
+  let state = { activeOwner: "alice", accounts: { alice: { snapshot: snapshot(), queue: [] } }, revision: 0, enabled: true };
+  let fail = false;
+  let downloadOwner = "alice";
+  let releaseDownload = null;
+  const receipts = new Set();
+  const requests = [];
+  const store = {
+    readOfflineDatabase: async () => structuredClone(state),
+    activateSnapshot: async (download, revision) => {
+      if (!state.enabled || state.revision !== revision) throw new Error("cancelled");
+      const queue = state.accounts[download.ownerId]?.queue ?? [];
+      state.activeOwner = download.ownerId;
+      state.accounts[download.ownerId] = { snapshot: mergeSnapshot(download, queue), queue };
+    },
+    acknowledgeMutation: async (owner, id) => {
+      state.accounts[owner].queue = state.accounts[owner].queue.filter((entry) => entry.id !== id);
+    },
+    lockOfflineAccount: async () => { state.activeOwner = null; state.enabled = false; state.revision++; },
+    suspendOfflineAccount: async () => { state.activeOwner = null; state.revision++; },
+    rejectMutation: async (owner, id, reason) => {
+      state.accounts[owner].queue = state.accounts[owner].queue.map((e) => e.id === id ? { ...e, rejected: { reason, at: "now" } } : e);
+    },
+    retryRejectedMutation: async () => {}, discardRejectedMutation: async () => {},
+    enableOfflineDownload: async () => { if (!state.enabled) { state.enabled = true; state.revision++; } },
+    enqueueMutation: async (entry) => { state.accounts[entry.ownerId].queue.push(entry); },
+    forgetOfflineAccount: async () => { state.accounts = {}; await store.lockOfflineAccount(); },
+  };
+  const exports = {};
+  const sandbox = {
+    exports, console, AbortSignal, crypto, CustomEvent,
+    navigator: { onLine: true, locks: { request: async (_name, action) => action() } },
+    localStorage: { setItem() {} }, window: { dispatchEvent() {} },
+    fetch: overrides.fetch ?? (async (_url, options) => {
+      if (options.method === "POST") {
+        const entry = JSON.parse(options.body);
+        requests.push(entry.id);
+        receipts.add(entry.id);
+        if (fail) throw new Error("Reply lost after server commit");
+        return { ok: true, status: 200, json: async () => ({ success: true, id: entry.id }) };
+      }
+      if (releaseDownload) await new Promise((resolve) => { releaseDownload(resolve); });
+      return { ok: true, status: 200, json: async () => ({ snapshot: { ...snapshot(), ownerId: downloadOwner } }) };
+    }),
+    require: (name) => {
+      if (name === "react") return { createContext: () => ({}) };
+      if (name === "next/navigation" || name.includes("supabase/client")) return {};
+      if (name.includes("daily-metrics")) return { localDate: () => today };
+      if (name === "./model") return { validOfflinePayload };
+      if (name.includes("random-id")) return { randomId: () => crypto.randomUUID() };
+      if (name === "./store") return store;
+      if (name === "./errors") return errors;
+      throw new Error(`Unexpected dependency ${name}`);
+    },
+  };
+  const source = ts.transpileModule(readFileSync(new URL("./offline/client.tsx", import.meta.url), "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.Preserve, target: ts.ScriptTarget.ES2022 },
+  }).outputText.replace(/function OfflineProvider[\s\S]*$/, "");
+  // Synchronization is tested without rendering the provider.
+  vm.runInNewContext(source + "\nfunction OfflineProvider() {}", sandbox);
+  return { api: exports, store, state: () => state, receipts, requests,
+    fail: (value) => { fail = value; }, owner: (value) => { downloadOwner = value; },
+    hold: (value) => { releaseDownload = value; } };
+}
+
+test("sync keeps a lost-reply entry durable, then retries its original ID", async () => {
+  const h = syncHarness();
+  h.state().accounts.alice.queue.push(mutation("fixed-id", strength));
+  h.fail(true);
+  await assert.rejects(h.api.syncOffline(), /Reply lost/);
+  assert.equal(h.state().accounts.alice.queue[0].id, "fixed-id");
+  h.fail(false);
+  await h.api.syncOffline();
+  assert.deepEqual(h.requests, ["fixed-id", "fixed-id"]);
+  assert.equal(h.receipts.size, 1);
+  assert.equal(h.state().accounts.alice.queue.length, 0);
+});
+
+test("another account never uploads the original owner's pending entries", async () => {
+  const h = syncHarness();
+  h.state().accounts.alice.queue.push(mutation("alice-entry", strength));
+  h.owner("bob");
+  await h.api.syncOffline();
+  assert.deepEqual(h.requests, []);
+  assert.equal(h.state().activeOwner, "bob");
+  assert.equal(h.state().accounts.alice.queue.length, 1);
+});
+
+test("a stale form cannot queue an entry into a newly active account", async () => {
+  const h = syncHarness();
+  await assert.rejects(h.api.saveOfflineMutation({ kind: "steps", date: today, steps: 100 }, "bob"), /Account changed/);
+  assert.equal(h.state().accounts.alice.queue.length, 0);
+});
+
+test("forget or sign-out cancels an in-flight download and pauses automatic sync", async () => {
+  const h = syncHarness();
+  let resume;
+  const started = new Promise((resolve) => h.hold((release) => { resume = release; resolve(); }));
+  const running = h.api.syncOffline();
+  await started;
+  await h.store.forgetOfflineAccount();
+  resume();
+  await assert.rejects(running, /cancelled/);
+  assert.equal(h.state().activeOwner, null);
+  h.hold(null);
+  await h.api.syncOffline();
+  assert.deepEqual(Object.keys(h.state().accounts), []);
+  await h.api.syncOffline(true);
+  assert.equal(h.state().activeOwner, "alice");
+});
+
+test("M10: RIR is optional (null) but still limited to whole numbers 0-5 when present", () => {
+  const withRir = (rir) => ({ ...strength, sets: [{ ...strength.sets[0], rir }] });
+  assert.equal(validOfflinePayload(withRir(null), today), true);
+  assert.equal(validOfflinePayload(withRir(0), today), true);
+  for (const bad of [6, -1, 1.5, "2", undefined]) assert.equal(validOfflinePayload(withRir(bad), today), false, String(bad));
+});
+
+const respond = (status, body = {}) => async () => ({ ok: status < 400, status, json: async () => body });
+const queueOf = (h) => h.state().accounts.alice.queue;
+
+test("M9: a network failure or timeout keeps the account enabled and the whole queue, and a retry succeeds", async () => {
+  for (const failure of [new TypeError("fetch failed"), Object.assign(new Error("timed out"), { name: "TimeoutError" })]) {
+    let down = true;
+    const h = syncHarness({ fetch: async (_u, o) => { if (down) throw failure; return o?.method === "POST" ? { ok: true, status: 200, json: async () => ({}) } : { ok: true, status: 200, json: async () => ({ snapshot: snapshot() }) }; } });
+    queueOf(h).push(mutation("m1", strength), mutation("m2", strength));
+    await assert.rejects(h.api.syncOffline(), (e) => e.kind === "network");
+    assert.equal(h.state().enabled, true);
+    assert.equal(h.state().activeOwner, "alice");
+    assert.deepEqual(queueOf(h).map((e) => e.id), ["m1", "m2"]);
+    down = false;
+    await h.api.syncOffline();
+    assert.equal(queueOf(h).length, 0);
+  }
+});
+
+test("M9: an expired session asks to sign in again but keeps the queue, the owner's data and the enabled flag", async () => {
+  const h = syncHarness({ fetch: respond(401, { error: "Sign in again to sync. Your entries remain on this device." }) });
+  queueOf(h).push(mutation("m1", strength));
+  await assert.rejects(h.api.syncOffline(), (e) => e.kind === "session");
+  assert.equal(h.state().activeOwner, null); // not acting as alice until she signs in
+  assert.equal(h.state().enabled, true); // NOT switched off (the old behavior)
+  assert.ok(h.state().accounts.alice, "alice's data is still on the device");
+  assert.deepEqual(queueOf(h).map((e) => e.id), ["m1"]);
+  assert.ok(!queueOf(h)[0].rejected);
+});
+
+test("M9: server errors (500, 502, 503) are retried later and never mark the entry as rejected", async () => {
+  for (const status of [500, 502, 503]) {
+    const h = syncHarness({ fetch: respond(status, { error: "boom" }) });
+    queueOf(h).push(mutation("m1", strength));
+    await assert.rejects(h.api.syncOffline(), (e) => e.kind === "server");
+    assert.equal(h.state().enabled, true);
+    assert.equal(h.state().activeOwner, "alice");
+    assert.ok(!queueOf(h)[0].rejected);
+  }
+});
+
+test("M9: a 400 marks only that entry as rejected, keeps it, and the entries behind it still sync", async () => {
+  const sent = [];
+  const h = syncHarness({ fetch: async (_u, o) => {
+    if (o?.method !== "POST") return { ok: true, status: 200, json: async () => ({ snapshot: snapshot() }) };
+    const id = JSON.parse(o.body).id;
+    sent.push(id);
+    return id === "bad" ? { ok: false, status: 400, json: async () => ({ error: "Rejected by the server: Invalid workout set" }) } : { ok: true, status: 200, json: async () => ({}) };
+  } });
+  queueOf(h).push(mutation("bad", strength), mutation("good", strength));
+  await h.api.syncOffline(); // does not throw: nothing to retry
+  assert.deepEqual(queueOf(h).map((e) => [e.id, Boolean(e.rejected)]), [["bad", true]]);
+  assert.match(queueOf(h)[0].rejected.reason, /Invalid workout set/);
+  assert.equal(h.state().enabled, true);
+  assert.equal(h.state().activeOwner, "alice");
+  sent.length = 0;
+  await h.api.syncOffline(); // a rejected entry is not sent again on every sync
+  assert.deepEqual(sent, []);
+});
+
+test("M9: the rejected entry can be exported before it is discarded", async () => {
+  const h = syncHarness({ fetch: async (_u, o) => o?.method === "POST"
+    ? { ok: false, status: 400, json: async () => ({ error: "Rejected by the server: Invalid workout set" }) }
+    : { ok: true, status: 200, json: async () => ({ snapshot: snapshot() }) } });
+  queueOf(h).push(mutation("bad", strength));
+  await h.api.syncOffline();
+  const out = rejectedEntryExport(queueOf(h)[0]);
+  const parsed = JSON.parse(out.json);
+  assert.equal(parsed.entry.id, "bad");
+  assert.deepEqual(parsed.entry.payload, strength);
+  assert.match(parsed.reason, /Invalid workout set/);
+});
+
+test("M9: a 409 (entry of another account) suspends without deleting anything", async () => {
+  const h = syncHarness({ fetch: respond(409, { error: "This entry belongs to another account." }) });
+  queueOf(h).push(mutation("m1", strength));
+  await assert.rejects(h.api.syncOffline(), (e) => e.kind === "owner");
+  assert.equal(h.state().enabled, true);
+  assert.deepEqual(queueOf(h).map((e) => e.id), ["m1"]);
+});

@@ -1,0 +1,129 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* One brand accent (lime) carries every primary action; the other hues are muted and only separate data
+   (set types, macros, chart series, errors). Surfaces are told apart by fill, not by outlines.
+   Each accent has a solid fill, a text colour tuned per theme, and soft/border tints of the solid. */
+:root {
+  color-scheme: light;
+  --background: #f5f4ef;
+  --card: #ffffff;
+  --inner: #efede6;
+  --control: #e8e6de;
+  --border: #0000001a;
+  --foreground: #0c0c0d;
+  --text-soft: #4a4a4f;
+  --muted: #7a7a80;
+  --placeholder: #a3a3a8;
+  --on-solid: #0c0c0d;
+
+  --lime: #c8f031;  --lime-text: #4d6a00;  --lime-soft: #c8f03133;  --lime-border: #c8f03166;
+  --coral: #ff7a59; --coral-text: #c2410c; --coral-soft: #ff7a5933; --coral-border: #ff7a5966;
+  --ice: #7cc4ff;   --ice-text: #1d5f94;   --ice-soft: #7cc4ff33;   --ice-border: #7cc4ff66;
+  --lilac: #b7a4ff; --lilac-text: #5b3fc4; --lilac-soft: #b7a4ff33; --lilac-border: #b7a4ff66;
+  --gold: #ffc233;  --gold-text: #8a5a00;  --gold-soft: #ffc23333;  --gold-border: #ffc23366;
+  --red: #ff5a5f;   --red-text: #c0272d;   --red-soft: #ff5a5f33;   --red-border: #ff5a5f66;
+
+  --chart-grid: #0000001a;
+  --chart-axis: #7a7a80;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: #09090b;
+  --card: #151517;
+  --inner: #1e1e21;
+  --control: #26262a;
+  --border: #ffffff17;
+  --foreground: #f6f6f4;
+  --text-soft: #b4b4ba;
+  --muted: #85858c;
+  --placeholder: #5c5c63;
+  --on-solid: #0c0c0d;
+
+  --lime-text: #c8f031;  --lime-soft: #c8f0311f;  --lime-border: #c8f03140;
+  --coral-text: #ff8f72; --coral-soft: #ff7a591f; --coral-border: #ff7a5940;
+  --ice-text: #8fceff;   --ice-soft: #7cc4ff1f;   --ice-border: #7cc4ff40;
+  --lilac-text: #c6b8ff; --lilac-soft: #b7a4ff1f; --lilac-border: #b7a4ff40;
+  --gold-text: #ffd05c;  --gold-soft: #ffc2331f;  --gold-border: #ffc23340;
+  --red-text: #ff7a7e;   --red-soft: #ff5a5f1f;   --red-border: #ff5a5f40;
+
+  --chart-grid: #ffffff14;
+  --chart-axis: #85858c;
+}
+
+/* Only the palette above: Tailwind's default colours are switched off so a stray `emerald-500` fails loudly. */
+@theme {
+  --color-*: initial;
+  --color-white: #fff;
+  --color-black: #000;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-card: var(--card);
+  --color-inner: var(--inner);
+  --color-control: var(--control);
+  --color-line: var(--border);
+  --color-foreground: var(--foreground);
+  --color-soft: var(--text-soft);
+  --color-muted: var(--muted);
+  --color-placeholder: var(--placeholder);
+  --color-on-solid: var(--on-solid);
+
+  --color-lime: var(--lime);   --color-lime-text: var(--lime-text);   --color-lime-soft: var(--lime-soft);   --color-lime-border: var(--lime-border);
+  --color-coral: var(--coral); --color-coral-text: var(--coral-text); --color-coral-soft: var(--coral-soft); --color-coral-border: var(--coral-border);
+  --color-ice: var(--ice);     --color-ice-text: var(--ice-text);     --color-ice-soft: var(--ice-soft);     --color-ice-border: var(--ice-border);
+  --color-lilac: var(--lilac); --color-lilac-text: var(--lilac-text); --color-lilac-soft: var(--lilac-soft); --color-lilac-border: var(--lilac-border);
+  --color-gold: var(--gold);   --color-gold-text: var(--gold-text);   --color-gold-soft: var(--gold-soft);   --color-gold-border: var(--gold-border);
+  --color-red: var(--red);     --color-red-text: var(--red-text);     --color-red-soft: var(--red-soft);     --color-red-border: var(--red-border);
+
+
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  button:not(:disabled), a, summary, select {
+    cursor: pointer;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--lime);
+    outline-offset: 3px;
+  }
+
+  input::placeholder, textarea::placeholder {
+    color: var(--placeholder);
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  font-size: 15px;
+}
+
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #0c0c0d !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-break-inside-avoid {
+    break-inside: avoid;
+  }
+}

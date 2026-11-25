@@ -1,0 +1,79 @@
+@AGENTS.md
+
+# RepLog (nova2) — context proiect
+
+PWA de fitness: antrenamente (seturi, cardio, progresie), mese și macronutrienți, pași, greutate corporală.
+Utilizatorul comunică în română; codul și comentariile sunt în engleză, textele din UI sunt bilingve.
+
+## Stack și direcție
+- Next.js 16 (App Router, `proxy.ts` în loc de middleware), React 19, Tailwind 4, TypeScript, `@ducanh2912/next-pwa`.
+- Supabase: Postgres + Auth + RLS. Clienți: `lib/supabase/server.ts` (anon, cu sesiune), `utils/supabase/client.ts` (browser),
+  `lib/supabase/admin.ts` (service_role, `server-only`: ștergerea contului, catalogul de coduri de bare și tabelul
+  `google_drive_backups`, accesat doar prin `lib/drive-service.ts`).
+- Țintă: self-hosted pe VPS: un singur `docker-compose.yml` cu Supabase minimal (db, auth, rest, storage; fără realtime/studio/imgproxy), job `migrate`, app, cron și Caddy (un singur domeniu: `/auth/v1`, `/rest/v1`, `/storage/v1` către Supabase). Ghid și ce s-a testat: `docs/self-hosting.md`. Neîncercat: HTTPS real, SMTP, browser end-to-end.
+- Modulul ML (Python/FastAPI) e în pauză.
+
+## Comenzi
+- `npm run dev`; `npm run build` (folosește `--webpack`; PWA e dezactivat în dev).
+- Teste: `node --experimental-strip-types --test lib/*.test.mjs` (Node 22; testele importă direct fișiere `.ts`).
+- `npx tsc --noEmit -p .` și `npx eslint <fișiere>`. ESLint are erori vechi (`any`, `set-state-in-effect`);
+  nu adăuga altele noi — compară numărul de erori cu `HEAD` pe fișierele atinse.
+
+## Baza de date și migrații
+- Migrațiile sunt în `supabase/migrations/`. **Utilizatorul le rulează manual din Supabase SQL Editor**, nu cu `db push`.
+- Istoricul de migrații din Supabase nu se potrivește cu folderul local (remote are 4 versiuni din iulie 2026 fără fișiere
+  locale; cele locale nu sunt înregistrate remote). `db push` eșuează până la `migration repair`. Migrația de bază `202610010000_base_schema.sql` e doar pentru o bază nouă (VPS), nu pentru proiectul hosted;
+  `bash scripts/verify-migrations.sh` aplică tot folderul pe un Postgres în Docker.
+- `backup_complet.sql` (în .gitignore) = dump de schemă din 2026-10-24, de dinaintea migrațiilor din acea zi.
+- Fiecare migrație: `begin; … commit;`. Funcțiile `security definer` au `set search_path = ''`, nume calificate
+  complet și `revoke … from public, anon`.
+- Variabile de mediu: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+  (fără ea nu merg scanarea codurilor de bare și ștergerea contului).
+  Backup Google Drive: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `DRIVE_TOKEN_KEY`
+  (32 bytes base64, criptează refresh token-urile), `CRON_SECRET` (pentru `/api/drive/cron`, apelat orar). Fără ele
+  cardul din Setări nu apare. Detalii în README („Automatic Google Drive backup”).
+
+## Design
+- Tokenii sunt în `app/globals.css` (lime = singurul accent pentru acțiuni; coral/ice/lilac/gold/red doar pentru date;
+  suprafețe `card` / `inner` / `control`, fără contururi). Paleta implicită Tailwind e dezactivată: `zinc-*`, `emerald-*`
+  etc. nu mai există.
+- Componentele sunt în `app/components/ui` (`Screen`, `Card`, `Button`, `Select`, `Segmented`...). Seturile și badge-urile
+  de tip set sunt în `app/components/workout-parts.tsx`, folosite identic în `/insert`, `/offline` și `/edit`.
+- Nu suprascrie prin `className` o clasă pe care componenta o setează deja (padding, fundal, min-height): în Tailwind 4
+  câștigă ordinea din CSS, nu cea din atribut. Adaugă o opțiune la componentă (ex. `compact`, `small`).
+
+## Reguli care nu se văd ușor din cod
+- **GDPR:** toate tabelele cu date de utilizator au FK `on delete cascade` spre `auth.users`. Un tabel nou trebuie:
+  cascade, RLS, inclus în export (`lib/account-export.ts`), în funcția SQL `import_my_data` și în `delete_my_data`.
+- **Catalog comun de alimente:** produsele cu cod de bare au `user_id = null` și se scriu doar pe server, prin
+  `lib/foods.ts` (date de la Open Food Facts, niciodată valori trimise de client). Alimentele manuale sunt private.
+- **Offline:** salvările trec prin coada din IndexedDB (`saveOfflineMutation`) când `useOffline().ownerId` există;
+  serverul aplică prin funcția SQL `sync_offline_entry`. Limitele de validare trebuie să fie identice în trei locuri:
+  constrângerile tabelelor, `sync_offline_entry` și `lib/offline/model.ts` (plus formularele din `/insert` și `/offline`).
+  Fără rețea, navigarea ajunge pe `/offline`, deci funcțiile „offline” trebuie să existe și acolo.
+- **Unități:** greutățile se stochează mereu în kg. Afișare/introducere prin `lib/units.ts`, `useUnits()` (client) și
+  `getWeightUnit` / `getWeightFormatter` (server, `app/units.ts`). Unitatea vine din `profiles.weight_unit`, copiată
+  în cookie-ul `weight_unit` (setat la salvarea profilului, la login și la înregistrare).
+- **Limbă:** `t(ro, en)` / `<Text ro en />`; server `getLanguage()`, client `useLanguage()`.
+- Supabase întoarce maxim 1000 de rânduri pe cerere: paginează cu `.range()`.
+
+## Funcționalități principale
+- `/settings`: profil, email/parolă, export/import JSON („Datele tale”), Danger Zone (șterge datele / contul).
+- `/meals/progress/targets`: recomandare calorii (`lib/energy.ts`): Mifflin-St Jeor × activitate, sau TDEE adaptiv din
+  media caloriilor (≥10 zile cu mese) și trendul greutății (regresie, ≥3 cântăriri pe ≥10 zile — pragul rămâne așa,
+  decizia utilizatorului).
+- Check-in zilnic (`daily_checkin`: energie, sațietate, somn 1–10 + notiță; `lib/checkin.ts`, `app/components/checkin-card.tsx`),
+  grafic în `/stats?mode=checkin`, funcționează și offline (payload `checkin`). La selectarea unui exercițiu în `/insert`
+  apar recordul all-time și plateau-ul (`lib/plateau.ts`, 4 sesiuni fără nou 1RM estimat); în `/offline` nu există hint-uri.
+- Poze de progres (`/photos`, `lib/photos.ts`): imaginile stau în bucket-ul Supabase Storage privat `progress-photos`
+  (`<user_id>/<id>.jpg`), metadatele în `progress_photos`. Fișierele din Storage NU se șterg prin cascade și nici cu SQL:
+  `deleteAllData`/`deleteAccount` apelează `removeAllPhotoFiles` înainte. Backup-ul Drive urcă pozele ca fișiere separate
+  `replog-photo-<id>.jpg` (JSON-ul conține doar metadatele), iar restaurarea le aduce înapoi (`lib/photos-restore.ts`);
+  `import_my_data` nu creează rânduri de poze. Nu funcționează offline.
+- Cronometru de pauză între seturi (`app/components/rest-timer.tsx`) în `/insert` și `/offline`.
+
+## Idei amânate
+- Poze de progres criptate end-to-end (ascunse și de administratori): analiza în `docs/idei/poze-criptate-e2ee.md`.
+- Reparare istoric migrații (`migration repair`, inclusiv `--status applied 202610010000`).
+- Măsurători corporale (talie, piept etc.), rutine de antrenament, link direct spre recomandarea de calorii.
+- Aplicație mobilă separată, complet offline (Expo + SQLite) — amânată de utilizator.
