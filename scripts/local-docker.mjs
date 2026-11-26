@@ -60,6 +60,7 @@ function ensureLocalDockerEnv() {
     "PUBLIC_SCHEME=http",
     "HTTP_PORT=80",
     "HTTPS_PORT=443",
+    "ADMINER_PORT=8081",
     "COOKIE_SECURE=false",
     "COOKIE_DOMAIN=",
     "SWAGGER_ENABLED=true",
@@ -91,6 +92,8 @@ function runCompose(composeArgs) {
     "compose",
     "-p",
     PROJECT_NAME,
+    "--profile",
+    "tools",
     "--env-file",
     ENV_FILE,
     "-f",
@@ -132,6 +135,7 @@ function main() {
 
   const env = ensureLocalDockerEnv();
   const httpPort = env.HTTP_PORT || "80";
+  const adminerPort = env.ADMINER_PORT || "8081";
   const baseUrl = httpPort === "80" ? "http://localhost" : `http://localhost:${httpPort}`;
 
   switch (command) {
@@ -146,6 +150,8 @@ function main() {
       console.log(`  Web App:      ${baseUrl}`);
       console.log(`  Swagger UI:   ${baseUrl}/api/docs`);
       console.log(`  API Health:   ${baseUrl}/api/v1/health`);
+      console.log(`  Adminer (DB): http://localhost:${adminerPort}  (PostgreSQL / server: postgres / user: postgres / db: replog)`);
+      console.log(`  DB password:  ${env.POSTGRES_PASSWORD ?? "(see .env.docker.local)"}`);
       console.log("  Stop stack:   npm run docker:local:down");
       console.log("  View logs:    npm run docker:local:logs");
       return;

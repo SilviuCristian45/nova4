@@ -43,12 +43,12 @@ Requires **Node.js 24+** (native `crypto.argon2` and built-in TypeScript test ru
 
 > Service workers / PWA caching are intentionally disabled in `npm run dev:web`. To test offline PWA behavior locally, run the full local Docker stack below (`npm run docker:local`), or run `npm run build` and start both apps in production mode.
 
-### Full Local Docker Stack (All 5 Containers)
+### Full Local Docker Stack (All Containers + Adminer)
 
-To run the complete production-like stack (`postgres`, `minio`, `api`, `web`, `caddy`) directly in Docker on `http://localhost` (with auto-generated persistent secrets in `.env.docker.local`):
+To run the complete production-like stack (`postgres`, `minio`, `api`, `web`, `caddy`, plus local-only `adminer` on `http://localhost:8081`) directly in Docker on `http://localhost` (with auto-generated persistent secrets in `.env.docker.local`):
 
 ```bash
-npm run docker:local        # build & start all 5 containers on http://localhost
+npm run docker:local        # build & start all containers on http://localhost (+ Adminer on :8081)
 npm run docker:local:logs   # follow logs
 npm run docker:local:down   # stop containers (keeps Postgres & MinIO data)
 npm run docker:local:reset  # stop containers and wipe local Docker volumes
