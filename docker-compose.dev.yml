@@ -21,8 +21,7 @@ services:
       retries: 10
 
   minio:
-    image: cgr.dev/chainguard/minio:latest
-    user: "0:0"
+    image: pgsty/silo:latest
     restart: unless-stopped
     command: server /data --console-address ":9001"
     ports:

@@ -5,7 +5,7 @@ One `docker-compose.yml` starts the entire self-hosted stack in **5 services**, 
 | Service | What it is |
 | --- | --- |
 | `postgres` | PostgreSQL 17 (`postgres:17-alpine`) storing all RepLog data (`replog` database) |
-| `minio` | S3-compatible object storage for private `progress-photos` and `checkin-photos` buckets |
+| `minio` | S3-compatible object storage (`pgsty/silo`, open-source MinIO fork) for private `progress-photos` and `checkin-photos` buckets |
 | `api` | RepLog NestJS 11 + TypeORM REST API (auto-runs TypeORM migrations, auto-creates MinIO buckets, and runs the hourly Google Drive backup cron natively via `@nestjs/schedule`) |
 | `web` | RepLog Next.js standalone PWA frontend |
 | `caddy` | The only public entry point (ports `80`/`443`), automatic HTTPS via Let's Encrypt |
