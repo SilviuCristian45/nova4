@@ -688,6 +688,35 @@ async function collectBucketKeysFromDb(
   return { progressPhotoKeys, checkinPhotoKeys };
 }
 
+export function buildPgClientConfig(connectionString: string): pg.ClientConfig {
+  try {
+    const parsed = new URL(connectionString);
+    const sslMode = parsed.searchParams.get("sslmode")?.toLowerCase();
+    const host = parsed.hostname.toLowerCase();
+    const isLocal = host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "postgres";
+
+    if (sslMode === "disable") {
+      return { connectionString };
+    }
+
+    if (!isLocal || sslMode === "require" || sslMode === "no-verify" || sslMode === "prefer") {
+      // Remove sslmode from URL so pg-connection-string does not override rejectUnauthorized: false
+      // (Supabase Cloud pooler/direct endpoints frequently present an intermediate chain not in Node's default CA bundle).
+      if (sslMode === "require" || sslMode === "no-verify" || sslMode === "prefer") {
+        parsed.searchParams.delete("sslmode");
+      }
+      return {
+        connectionString: parsed.toString(),
+        ssl: { rejectUnauthorized: false },
+      };
+    }
+  } catch {
+    // Fall back to raw connectionString if URL parsing fails.
+  }
+
+  return { connectionString };
+}
+
 function requireEnv(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) {
@@ -713,13 +742,13 @@ async function main(): Promise<void> {
   try {
     if (!options.skipDb || !options.skipStorage) {
       const targetUrl = requireEnv("TARGET_DATABASE_URL");
-      targetClient = new Client({ connectionString: targetUrl });
+      targetClient = new Client(buildPgClientConfig(targetUrl));
       await targetClient.connect();
     }
 
     if (!options.skipDb) {
       const sourceUrl = requireEnv("SOURCE_DATABASE_URL");
-      sourceClient = new Client({ connectionString: sourceUrl });
+      sourceClient = new Client(buildPgClientConfig(sourceUrl));
       await sourceClient.connect();
 
       const targetUsersCols = await getTableColumns(targetClient!, "public", "users");

@@ -22,6 +22,11 @@
     "test:api:e2e": "npm run test:e2e --workspace=@replog/api",
     "test:web": "npm run test --workspace=@replog/web",
     "typecheck": "npm run typecheck --workspace=@replog/shared && npm run typecheck --workspace=@replog/api && npm run typecheck --workspace=@replog/web",
-    "lint:web": "npm run lint --workspace=@replog/web"
+    "lint:web": "npm run lint --workspace=@replog/web",
+    "docker:local": "node scripts/local-docker.mjs up",
+    "docker:local:down": "node scripts/local-docker.mjs down",
+    "docker:local:reset": "node scripts/local-docker.mjs down --reset",
+    "docker:local:logs": "node scripts/local-docker.mjs logs",
+    "docker:local:ps": "node scripts/local-docker.mjs ps"
   }
 }

@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   MIGRATION_TABLES,
   buildBatchInsertSql,
+  buildPgClientConfig,
   collectCheckinPhotoPaths,
   encodeStorageObjectPath,
   intersectColumns,
@@ -129,4 +130,16 @@ test("collectCheckinPhotoPaths deduplicates non-null paths and encodeStorageObje
   ]);
   assert.deepEqual(paths, ["u1/a.jpg", "u1/b.jpg", "u1/c.jpg"]);
   assert.equal(encodeStorageObjectPath("user-1/photo 1.jpg"), "user-1/photo%201.jpg");
+});
+
+test("buildPgClientConfig enables relaxed SSL for remote Supabase hosts and keeps local hosts plain", () => {
+  const localCfg = buildPgClientConfig("postgres://postgres:postgres@localhost:5439/replog");
+  assert.equal(localCfg.ssl, undefined);
+
+  const remoteCfg = buildPgClientConfig("postgres://postgres.abc:pass@aws-0-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require");
+  assert.deepEqual(remoteCfg.ssl, { rejectUnauthorized: false });
+  assert.equal(remoteCfg.connectionString?.includes("sslmode="), false);
+
+  const disabledCfg = buildPgClientConfig("postgres://postgres:pass@remote.host:5432/db?sslmode=disable");
+  assert.equal(disabledCfg.ssl, undefined);
 });
