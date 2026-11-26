@@ -19,6 +19,7 @@ import {
   UserEntity,
 } from "../../database/entities";
 import type { AccessTokenPayload } from "../../common/auth/auth-user.type";
+import { isSuperAdminEmail } from "../../common/auth/super-admin";
 import { PasswordService } from "./password.service";
 import type {
   ActivateCoachDto,
@@ -60,6 +61,7 @@ export interface SerializedCoachProfile {
 export interface AuthUserView {
   id: string;
   email: string;
+  isSuperAdmin: boolean;
   createdAt: string;
   profile: SerializedProfile;
   coachProfile: SerializedCoachProfile | null;
@@ -193,6 +195,10 @@ export class AuthService {
       throw new UnauthorizedException("Invalid email or password");
     }
 
+    if (user.disabledAt !== null) {
+      throw new ForbiddenException("This account has been disabled by an administrator");
+    }
+
     if (needsRehash) {
       const upgradedHash = await this.passwordService.hash(dto.password);
       await this.usersRepo.update({ id: user.id }, { passwordHash: upgradedHash });
@@ -235,6 +241,13 @@ export class AuthService {
     const user = await this.usersRepo.findOne({ where: { id: stored.userId } });
     if (!user) {
       throw new UnauthorizedException("Account no longer exists");
+    }
+    if (user.disabledAt !== null) {
+      await this.refreshTokensRepo.update(
+        { userId: user.id, revokedAt: IsNull() },
+        { revokedAt: new Date() },
+      );
+      throw new UnauthorizedException("This account has been disabled");
     }
 
     const profile = await this.ensureProfile(user.id);
@@ -286,6 +299,9 @@ export class AuthService {
     const user = await this.usersRepo.findOne({ where: { id: userId } });
     if (!user) {
       throw new UnauthorizedException("Account not found");
+    }
+    if (user.disabledAt !== null) {
+      throw new UnauthorizedException("This account has been disabled");
     }
     const profile = await this.ensureProfile(user.id);
     const coachProfile =
@@ -465,6 +481,7 @@ export class AuthService {
     return {
       id: user.id,
       email: user.email,
+      isSuperAdmin: isSuperAdminEmail(user.email, this.configService.get<string>("SUPER_ADMIN_EMAILS")),
       createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : String(user.createdAt),
       profile: serializeProfile(profile),
       coachProfile: serializeCoachProfile(coachProfile),

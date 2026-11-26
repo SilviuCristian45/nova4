@@ -7,6 +7,7 @@ import { TypeOrmModule } from "@nestjs/typeorm";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { buildDataSourceOptions } from "./database/data-source";
 import { AccountModule } from "./modules/account/account.module";
+import { AdminModule } from "./modules/admin/admin.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { CoachModule } from "./modules/coach/coach.module";
 import { DriveModule } from "./modules/drive/drive.module";
@@ -55,6 +56,7 @@ import { StorageModule } from "./storage/storage.module";
     CoachModule,
     MealPlansModule,
     AccountModule,
+    AdminModule,
     DriveModule,
     HealthModule,
   ],

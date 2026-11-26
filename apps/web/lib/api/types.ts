@@ -33,9 +33,38 @@ export interface ApiCoachProfile {
 export interface ApiAuthUser {
   id: string;
   email: string;
+  isSuperAdmin?: boolean;
   createdAt: string;
   profile: ApiProfile;
   coachProfile: ApiCoachProfile | null;
+}
+
+export interface ApiAdminUser {
+  id: string;
+  email: string;
+  displayName: string | null;
+  role: UserRole;
+  weightUnit: WeightUnit;
+  dailyStepsGoal: number;
+  disabled: boolean;
+  disabledAt: string | null;
+  isSuperAdmin: boolean;
+  createdAt: string;
+  updatedAt: string;
+  workoutsCount: number;
+  mealsCount: number;
+  photosCount: number;
+}
+
+export interface ApiAdminUserListResponse {
+  stats: {
+    total: number;
+    active: number;
+    disabled: number;
+    coaches: number;
+    clients: number;
+  };
+  items: ApiAdminUser[];
 }
 
 export interface ApiAuthSession {

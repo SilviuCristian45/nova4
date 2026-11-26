@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { Reflector } from "@nestjs/core";
 import { JwtService } from "@nestjs/jwt";
 import type { Request } from "express";
+import { DataSource } from "typeorm";
 import { AUTH_COOKIES, type AccessTokenPayload, type AuthenticatedUser } from "../auth/auth-user.type";
 import { IS_PUBLIC_KEY } from "../decorators/public.decorator";
 
@@ -12,6 +13,7 @@ export class JwtAuthGuard implements CanActivate {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly reflector: Reflector,
+    private readonly dataSource: DataSource,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -33,9 +35,20 @@ export class JwtAuthGuard implements CanActivate {
       if (!payload?.sub || !payload?.email) {
         throw new UnauthorizedException("Invalid access token");
       }
+
+      // Verify user still exists and is not disabled (ensures immediate lockout on admin disable/delete).
+      const rows = (await this.dataSource.query(
+        `SELECT email, disabled_at FROM public.users WHERE id = $1 LIMIT 1`,
+        [payload.sub],
+      )) as { email: string; disabled_at: Date | null }[];
+      const dbUser = rows[0];
+      if (!dbUser || dbUser.disabled_at !== null) {
+        throw new UnauthorizedException("Account is disabled or no longer exists");
+      }
+
       request.user = {
         userId: payload.sub,
-        email: payload.email,
+        email: dbUser.email,
         role: payload.role === "coach" ? "coach" : "client",
       };
       return true;

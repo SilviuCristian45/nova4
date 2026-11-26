@@ -6,7 +6,7 @@ import { pickNextProgramWorkout } from "@/lib/coach/programs";
 import { mondayOfWeek } from "@/lib/coach/interactions";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Award, ChevronRight, ClipboardCheck, ClipboardList, Play, Settings, Utensils } from "lucide-react";
+import { Award, ChevronRight, ClipboardCheck, ClipboardList, Play, Settings, Shield, Utensils } from "lucide-react";
 import { SignOutButton } from "./components/sign-out-button";
 import { getSessionUser, serverApi } from "@/lib/api/server";
 import { getDailySteps } from "./steps/steps";
@@ -191,6 +191,12 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           {new Date().toLocaleDateString(locale, { weekday: "long", day: "numeric", month: "long" })}
         </span>
         <div className="flex items-center gap-2">
+          {user.isSuperAdmin && (
+            <Link href="/admin" className={buttonClass({ variant: "soft", tone: "lilac", small: true })}>
+              <Shield className="size-4" />
+              <Text ro="Admin" en="Admin" />
+            </Link>
+          )}
           {isCoach && (
             <Link href="/coach" className={buttonClass({ variant: "soft", tone: "lime", small: true })}>
               <Award className="size-4" />

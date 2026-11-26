@@ -66,6 +66,7 @@ function ensureLocalDockerEnv() {
     "SWAGGER_ENABLED=true",
     "DISABLE_SIGNUP=false",
     "COACH_SELF_SERVE=true",
+    `SUPER_ADMIN_EMAILS=${devEnv.SUPER_ADMIN_EMAILS ?? ""}`,
     "",
     `POSTGRES_PASSWORD=${randomBytes(24).toString("hex")}`,
     `JWT_ACCESS_SECRET=${randomBytes(48).toString("base64url")}`,

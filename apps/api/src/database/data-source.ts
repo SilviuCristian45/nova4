@@ -35,6 +35,7 @@ import {
   WorkoutSetEntity,
 } from "./entities";
 import { InitialSchema1764000000000 } from "./migrations/1764000000000-InitialSchema";
+import { AddUserDisabledAt1765000000000 } from "./migrations/1765000000000-AddUserDisabledAt";
 
 export const DATABASE_ENTITIES = [
   UserEntity,
@@ -71,7 +72,7 @@ export const DATABASE_ENTITIES = [
   GoogleDriveBackupEntity,
 ];
 
-export const DATABASE_MIGRATIONS = [InitialSchema1764000000000];
+export const DATABASE_MIGRATIONS = [InitialSchema1764000000000, AddUserDisabledAt1765000000000];
 
 export function buildDataSourceOptions(databaseUrl?: string): DataSourceOptions {
   const url =

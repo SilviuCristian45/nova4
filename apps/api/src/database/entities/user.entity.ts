@@ -17,6 +17,9 @@ export class UserEntity {
   @Column({ name: "email_verified_at", type: "timestamptz", nullable: true })
   emailVerifiedAt: Date | null;
 
+  @Column({ name: "disabled_at", type: "timestamptz", nullable: true })
+  disabledAt: Date | null;
+
   @CreateDateColumn({ name: "created_at", type: "timestamptz" })
   createdAt: Date;
 

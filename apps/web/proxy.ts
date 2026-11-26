@@ -136,6 +136,14 @@ export async function proxy(request: NextRequest) {
     return copyCookiesOntoRedirect(refreshedSetCookies, NextResponse.redirect(url));
   }
 
+  if (user && (path === "/admin" || path.startsWith("/admin/"))) {
+    if (!user.isSuperAdmin) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/";
+      return copyCookiesOntoRedirect(refreshedSetCookies, NextResponse.redirect(url));
+    }
+  }
+
   if (user && isCoachRoute(path)) {
     const role = parseUserRole(user.profile?.role);
     if (!canAccessCoachRoute(role)) {

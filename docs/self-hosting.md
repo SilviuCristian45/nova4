@@ -39,6 +39,7 @@ No separate API subdomain, no Supabase containers, and no external cron containe
    - **Google Drive automatic backup**: set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI=https://<DOMAIN>/api/v1/drive/callback` (add the exact same URI in Google Cloud Console), `DRIVE_TOKEN_KEY`, and `CRON_SECRET`. The hourly scheduler runs inside `api` automatically when `DRIVE_CRON_ENABLED=true`.
    - **USDA food search fallback**: set `USDA_API_KEY`.
    - **Coach self-serve**: set `COACH_SELF_SERVE=false` to disable self-serve coach role activation on `/register` and `/settings`.
+   - **Super Admin dashboard (`/admin`)**: set `SUPER_ADMIN_EMAILS=you@example.com` (comma-separated allowlist). Only listed accounts see the **Admin** button and can access `/admin` / `/api/v1/admin/*` to create, edit, disable/enable, reset passwords, or delete accounts. Leave empty to keep `/admin` completely closed.
    - **OpenAPI / Swagger UI**: set `SWAGGER_ENABLED=true` to expose `https://<DOMAIN>/api/docs` (disabled by default in production).
 
 ## Operations

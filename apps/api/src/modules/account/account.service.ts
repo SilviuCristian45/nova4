@@ -592,6 +592,13 @@ export class AccountService {
 
   async deleteAccount(userId: string, confirmEmail: string): Promise<{ success: true }> {
     await this.verifyConfirmEmail(userId, confirmEmail);
+    return this.deleteAccountUnchecked(userId);
+  }
+
+  async deleteAccountUnchecked(userId: string): Promise<{ success: true }> {
+    const user = await this.usersRepo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException("Account not found");
+
     await this.purgeUserStorageOrAbort(userId);
     await this.cleanupDriveBestEffort(userId);
 
