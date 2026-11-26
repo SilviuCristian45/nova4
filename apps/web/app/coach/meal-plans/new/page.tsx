@@ -18,7 +18,7 @@ export default async function NewMealPlanPage({
 
   const [coachProfile, clients] = await Promise.all([
     getOwnCoachProfile(coach.userId),
-    getCoachActiveClients(coach.supabase, coach.userId),
+    getCoachActiveClients(),
   ]);
 
   const coachName = coachProfile?.display_name ?? coach.displayName ?? t("Antrenor", "Coach");

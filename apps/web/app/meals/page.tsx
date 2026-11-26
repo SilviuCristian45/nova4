@@ -1,59 +1,58 @@
-import Link from "next/link"
-import { Utensils } from "lucide-react"
-import { Text } from "@/app/components/language-provider"
-import { getLanguage } from "@/app/language"
-import { localDate } from "@/lib/daily-metrics"
-import { createClient } from "@/lib/supabase/server"
-import { getUserTargets } from "./action"
-import { Badge, BigNumber, Card, Columns, CtaCard, Label, LinkList, ProgressBar, Screen, TextLink, buttonClass } from "@/app/components/ui"
+import Link from "next/link";
+import { Utensils } from "lucide-react";
+import { Text } from "@/app/components/language-provider";
+import { getLanguage } from "@/app/language";
+import { localDate } from "@/lib/daily-metrics";
+import { getSessionUser, serverApi } from "@/lib/api/server";
+import { getUserTargets } from "./action";
+import { Badge, BigNumber, Card, Columns, CtaCard, Label, LinkList, ProgressBar, Screen, TextLink, buttonClass } from "@/app/components/ui";
 
-export const dynamic = "force-dynamic"
+export const dynamic = "force-dynamic";
 
-// Nutrition hub: today's calories at a glance, active coach meal plan, one big way to log a meal and a plain list of the rest.
+interface ApiMeal {
+  id: string;
+  items: { totalKcal: number }[];
+}
+
+interface ApiMealPlan {
+  id: string;
+  title: string;
+  targetKcal: number | null;
+  coachName: string;
+}
+
 export default async function MealsHubPage() {
-  const { t, locale } = await getLanguage()
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const { t, locale } = await getLanguage();
+  const user = await getSessionUser();
 
-  let kcal = 0
-  let mealCount = 0
-  let goal = 0
-  let activePlan: { id: string; title: string; target_kcal: number | null; coachName: string } | null = null
+  let kcal = 0;
+  let mealCount = 0;
+  let goal = 0;
+  let activePlan: { id: string; title: string; target_kcal: number | null; coachName: string } | null = null;
   if (user) {
-    const [{ data: meals }, targets, { data: mealPlanRow }] = await Promise.all([
-      supabase.from("meals").select("id, meal_items ( total_kcal )").eq("user_id", user.id).eq("performed_on", localDate()),
+    const [meals, targets, mealPlans] = await Promise.all([
+      serverApi<ApiMeal[]>(`/meals?date=${encodeURIComponent(localDate())}`).catch(() => []),
       getUserTargets(),
-      supabase
-        .from("meal_plans")
-        .select("id, title, target_kcal, coach_id")
-        .eq("assigned_client_id", user.id)
-        .eq("status", "active")
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-    ])
-    for (const meal of meals ?? []) {
-      for (const item of meal.meal_items ?? []) kcal += Number(item.total_kcal) || 0
+      serverApi<ApiMealPlan[]>("/meals/plan").catch(() => []),
+    ]);
+    for (const meal of meals) {
+      for (const item of meal.items ?? []) kcal += Number(item.totalKcal) || 0;
     }
-    kcal = Math.round(kcal)
-    mealCount = meals?.length ?? 0
-    goal = Number(targets.targets?.kcal) || 0
+    kcal = Math.round(kcal);
+    mealCount = meals.length;
+    goal = Number(targets.targets?.kcal) || 0;
 
-    if (mealPlanRow) {
-      const { data: coachProf } = await supabase
-        .from("coach_profiles")
-        .select("display_name")
-        .eq("user_id", mealPlanRow.coach_id)
-        .maybeSingle()
+    const firstPlan = mealPlans[0];
+    if (firstPlan) {
       activePlan = {
-        id: mealPlanRow.id as string,
-        title: mealPlanRow.title as string,
-        target_kcal: (mealPlanRow.target_kcal as number | null) ?? null,
-        coachName: (coachProf?.display_name as string | null)?.trim() || t("Antrenor", "Coach"),
-      }
+        id: firstPlan.id,
+        title: firstPlan.title,
+        target_kcal: firstPlan.targetKcal ?? null,
+        coachName: firstPlan.coachName?.trim() || t("Antrenor", "Coach"),
+      };
     }
   }
-  const over = goal > 0 && kcal > goal
+  const over = goal > 0 && kcal > goal;
 
   return (
     <Screen title={<Text ro="Nutriție" en="Nutrition" />}>
@@ -84,9 +83,7 @@ export default async function MealsHubPage() {
                 {t("Antrenor", "Coach")}: {activePlan.coachName}
               </p>
             </div>
-            {activePlan.target_kcal !== null && (
-              <Badge tone="lime">{activePlan.target_kcal} kcal</Badge>
-            )}
+            {activePlan.target_kcal !== null && <Badge tone="lime">{activePlan.target_kcal} kcal</Badge>}
           </div>
           <Link href="/meals/plan" className={buttonClass({ small: true })}>
             <Utensils className="size-4" />
@@ -97,13 +94,31 @@ export default async function MealsHubPage() {
 
       <Columns>
         <CtaCard href="/meals/insert" label={t("Masă nouă", "New meal")} title={t("Adaugă masă", "Add meal")} />
-        <LinkList items={[
-          { href: "/meals/plan", title: t("Plan alimentar", "Meal plan"), subtitle: t("Planul de la antrenor & export PDF", "Coach meal plan & PDF export") },
-          { href: "/meals/history", title: t("Istoric mese", "Meal history"), subtitle: t("Jurnalul tău alimentar", "Your food diary") },
-          { href: "/meals/progress", title: t("Statistici și macro", "Statistics and macros"), subtitle: t("Calorii, proteine, carbohidrați, grăsimi", "Calories, protein, carbs and fat") },
-          { href: "/meals/progress/targets", title: t("Obiective", "Goals"), subtitle: t("Calorii și macronutrienți zilnici", "Daily calories and macros") },
-        ]} />
+        <LinkList
+          items={[
+            {
+              href: "/meals/plan",
+              title: t("Plan alimentar", "Meal plan"),
+              subtitle: t("Planul de la antrenor & export PDF", "Coach meal plan & PDF export"),
+            },
+            {
+              href: "/meals/history",
+              title: t("Istoric mese", "Meal history"),
+              subtitle: t("Jurnalul tău alimentar", "Your food diary"),
+            },
+            {
+              href: "/meals/progress",
+              title: t("Statistici și macro", "Statistics and macros"),
+              subtitle: t("Calorii, proteine, carbohidrați, grăsimi", "Calories, protein, carbs and fat"),
+            },
+            {
+              href: "/meals/progress/targets",
+              title: t("Obiective", "Goals"),
+              subtitle: t("Calorii și macronutrienți zilnici", "Daily calories and macros"),
+            },
+          ]}
+        />
       </Columns>
     </Screen>
-  )
+  );
 }

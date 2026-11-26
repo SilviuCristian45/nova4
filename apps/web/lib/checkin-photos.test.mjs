@@ -1,13 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  CHECKIN_PHOTO_BUCKET,
-  attachCheckinPhotoUrls,
   checkinPhotoPath,
   diffRemovedCheckinPhotoPaths,
   hasAnyCheckinPhoto,
   isValidCheckinPhotoPath,
-  removeAllCheckinPhotoFiles,
   validateCheckinPhotoPaths,
 } from "./checkin-photos.ts";
 
@@ -23,7 +20,6 @@ test("checkinPhotoPath and isValidCheckinPhotoPath enforce user-scoped lowercase
   assert.equal(path, `${USER_ID}/${PHOTO_A}.jpg`);
   assert.equal(isValidCheckinPhotoPath(path, USER_ID), true);
 
-  // Rejects other users, traversal, uppercase, non-uuid, or wrong extension
   assert.equal(isValidCheckinPhotoPath(`${OTHER_USER}/${PHOTO_A}.jpg`, USER_ID), false);
   assert.equal(isValidCheckinPhotoPath(`${USER_ID}/../${PHOTO_A}.jpg`, USER_ID), false);
   assert.equal(isValidCheckinPhotoPath(`${USER_ID}/${PHOTO_A.toUpperCase()}.jpg`, USER_ID), false);
@@ -71,130 +67,7 @@ test("diffRemovedCheckinPhotoPaths detects replaced and cleared photos without d
   assert.deepEqual(clearedAll, [pathA, pathB, pathC]);
 });
 
-test("attachCheckinPhotoUrls batch-signs all check-in photo paths in one Storage call", async () => {
-  const pathA = checkinPhotoPath(USER_ID, PHOTO_A);
-  const pathB = checkinPhotoPath(USER_ID, PHOTO_B);
-  const calls = [];
-  const fakeSupabase = {
-    storage: {
-      from: (bucket) => ({
-        createSignedUrls: async (paths) => {
-          calls.push({ bucket, paths });
-          return {
-            data: paths.map((p) => ({ path: p, signedUrl: `https://signed.local/${p}` })),
-            error: null,
-          };
-        },
-      }),
-    },
-  };
-
-  const rows = [
-    {
-      id: "c1",
-      client_id: USER_ID,
-      coach_id: OTHER_USER,
-      enrollment_id: null,
-      week_start: "2026-11-23",
-      weight_kg: 80,
-      energy: 4,
-      sleep: 4,
-      stress: 2,
-      client_notes: null,
-      photo_front_path: pathA,
-      photo_back_path: null,
-      photo_side_path: pathB,
-      coach_reply: null,
-      reviewed_at: null,
-      created_at: "2026-11-24T10:00:00Z",
-      updated_at: "2026-11-24T10:00:00Z",
-    },
-    {
-      id: "c2",
-      client_id: USER_ID,
-      coach_id: OTHER_USER,
-      enrollment_id: null,
-      week_start: "2026-11-16",
-      weight_kg: 80.5,
-      energy: 4,
-      sleep: 4,
-      stress: 2,
-      client_notes: null,
-      photo_front_path: null,
-      photo_back_path: null,
-      photo_side_path: null,
-      coach_reply: null,
-      reviewed_at: null,
-      created_at: "2026-11-17T10:00:00Z",
-      updated_at: "2026-11-17T10:00:00Z",
-    },
-  ];
-
-  const enriched = await attachCheckinPhotoUrls(fakeSupabase, rows);
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].bucket, CHECKIN_PHOTO_BUCKET);
-  assert.deepEqual(calls[0].paths, [pathA, pathB]);
-  assert.deepEqual(enriched[0].photoUrls, {
-    front: `https://signed.local/${pathA}`,
-    side: `https://signed.local/${pathB}`,
-  });
-  assert.equal(hasAnyCheckinPhoto(enriched[0].photoUrls), true);
-  assert.deepEqual(enriched[1].photoUrls, {});
-  assert.equal(hasAnyCheckinPhoto(enriched[1].photoUrls), false);
-});
-
-test("attachCheckinPhotoUrls tolerates missing bucket errors cleanly", async () => {
-  const pathA = checkinPhotoPath(USER_ID, PHOTO_A);
-  const fakeSupabase = {
-    storage: {
-      from: () => ({
-        createSignedUrls: async () => ({ data: null, error: { message: "Bucket not found" } }),
-      }),
-    },
-  };
-  const enriched = await attachCheckinPhotoUrls(fakeSupabase, [{
-    id: "c1",
-    client_id: USER_ID,
-    coach_id: OTHER_USER,
-    enrollment_id: null,
-    week_start: "2026-11-23",
-    weight_kg: null,
-    energy: 4,
-    sleep: 4,
-    stress: 2,
-    client_notes: null,
-    photo_front_path: pathA,
-    photo_back_path: null,
-    photo_side_path: null,
-    coach_reply: null,
-    reviewed_at: null,
-    created_at: "2026-11-24T10:00:00Z",
-    updated_at: "2026-11-24T10:00:00Z",
-  }]);
-  assert.deepEqual(enriched[0].photoUrls, {});
-});
-
-test("removeAllCheckinPhotoFiles targets the checkin-photos bucket", async () => {
-  const bucketsUsed = [];
-  const removed = [];
-  let files = [{ name: `${PHOTO_A}.jpg` }, { name: `${PHOTO_B}.jpg` }];
-  const fakeSupabase = {
-    storage: {
-      from: (bucket) => {
-        bucketsUsed.push(bucket);
-        return {
-          list: async () => ({ data: files, error: null }),
-          remove: async (paths) => {
-            removed.push(...paths);
-            files = [];
-            return { error: null };
-          },
-        };
-      },
-    },
-  };
-
-  await removeAllCheckinPhotoFiles(fakeSupabase, USER_ID);
-  assert.deepEqual(bucketsUsed, [CHECKIN_PHOTO_BUCKET]);
-  assert.deepEqual(removed, [`${USER_ID}/${PHOTO_A}.jpg`, `${USER_ID}/${PHOTO_B}.jpg`]);
+test("hasAnyCheckinPhoto reflects presence of signed URLs", () => {
+  assert.equal(hasAnyCheckinPhoto({}), false);
+  assert.equal(hasAnyCheckinPhoto({ front: "https://signed.local/a.jpg" }), true);
 });

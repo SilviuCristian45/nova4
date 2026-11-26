@@ -1,58 +1,47 @@
-// app/actions/steps.ts
-"use server"
+"use server";
 
-import { getLanguage } from "@/app/language"
-import { localDate } from "@/lib/daily-metrics"
-import { createClient } from "@/lib/supabase/server"
-import { revalidatePath } from "next/cache"
+import { revalidatePath } from "next/cache";
+import { getLanguage } from "@/app/language";
+import { localDate } from "@/lib/daily-metrics";
+import { getSessionUser, serverApi } from "@/lib/api/server";
 
-// Preia pașii pentru o zi specifică (implicit azi)
 export async function getDailySteps(dateStr?: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return 0
+  const user = await getSessionUser();
+  if (!user) return 0;
 
-  const targetDate = dateStr || localDate()
-
-  const { data } = await supabase
-    .from("daily_steps")
-    .select("steps")
-    .eq("user_id", user.id)
-    .eq("date", targetDate)
-    .single()
-
-  return data?.steps || 0
+  const targetDate = dateStr || localDate();
+  try {
+    const rows = await serverApi<{ date: string; steps: number }[]>(
+      `/metrics/steps?date=${encodeURIComponent(targetDate)}`,
+    );
+    return rows[0]?.steps || 0;
+  } catch {
+    return 0;
+  }
 }
 
-// Salvează sau actualizează pașii pentru o zi
 export async function saveDailySteps(formData: FormData) {
-  const { t } = await getLanguage()
+  const { t } = await getLanguage();
 
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: t("Neautorizat", "Not signed in") }
+  const user = await getSessionUser();
+  if (!user) return { error: t("Neautorizat", "Not signed in") };
 
-  const date = formData.get("date") as string
-  const steps = parseInt(formData.get("steps") as string, 10)
+  const date = String(formData.get("date") ?? "");
+  const steps = parseInt(String(formData.get("steps") ?? ""), 10);
 
   if (isNaN(steps) || steps < 0) {
-    return { error: t("Număr de pași invalid", "Invalid step count") }
+    return { error: t("Număr de pași invalid", "Invalid step count") };
   }
 
-  // Folosim upsert pentru a insera sau actualiza pe baza constrângerii UNIQUE (user_id, date)
-  const { error } = await supabase
-    .from("daily_steps")
-    .upsert({ 
-      user_id: user.id, 
-      date, 
-      steps 
-    }, { onConflict: 'user_id, date' })
-
-  if (error) {
-    return { error: error.message }
+  try {
+    await serverApi("/metrics/steps", {
+      method: "PUT",
+      body: { date, steps },
+    });
+    revalidatePath("/");
+    revalidatePath("/stats");
+    return { success: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : t("Eroare la salvare.", "Save failed.") };
   }
-
-  revalidatePath("/") // Reîmprospătăm Dashboard-ul
-  revalidatePath("/stats")
-  return { success: true }
 }

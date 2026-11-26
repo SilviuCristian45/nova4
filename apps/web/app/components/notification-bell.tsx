@@ -23,11 +23,11 @@ export function NotificationBell({ initialUnread }: { initialUnread: number }) {
     async function refresh() {
       if (typeof navigator !== "undefined" && !navigator.onLine) return;
       try {
-        const response = await fetch("/api/notifications/unread", { cache: "no-store" });
+        const response = await fetch("/api/v1/notifications/unread", { cache: "no-store", credentials: "same-origin" });
         if (!response.ok) return;
-        const body = (await response.json()) as { unread?: number };
-        if (!cancelled && typeof body.unread === "number") {
-          setUnread(body.unread);
+        const body = (await response.json()) as { count?: number };
+        if (!cancelled && typeof body.count === "number") {
+          setUnread(body.count);
         }
       } catch {
         // Ignore transient offline errors.

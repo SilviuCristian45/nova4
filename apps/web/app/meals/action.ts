@@ -1,190 +1,172 @@
-"use server"
+"use server";
 
-import { getLanguage } from "@/app/language"
-import { createClient } from "@/lib/supabase/server"
-import { revalidatePath } from "next/cache"
-import { getOrCacheBarcodeFood } from "@/lib/foods"
+import { revalidatePath } from "next/cache";
+import { getLanguage } from "@/app/language";
+import { getSessionUser, serverApi } from "@/lib/api/server";
 
-// Funcție pentru salvarea în masă a unei liste de alimente
-export async function saveCompleteMeal(mealType: string, items: any[]) {
-  const { t } = await getLanguage()
+interface DraftFoodItem {
+  food: {
+    id?: string;
+    barcode?: string | null;
+    name: string;
+    brand?: string | null;
+    kcal_per_100g?: number;
+    protein_per_100g?: number;
+    carbs_per_100g?: number;
+    fat_per_100g?: number;
+    fiber_per_100g?: number;
+    kcalPer100g?: number;
+    proteinPer100g?: number;
+    carbsPer100g?: number;
+    fatPer100g?: number;
+    fiberPer100g?: number;
+  };
+  grams: number;
+}
 
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: t("Neautorizat", "Not signed in") }
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-  if (!items || items.length === 0) return { error: t("Masa este goală.", "The meal is empty.") }
+export async function saveCompleteMeal(mealType: string, items: DraftFoodItem[]) {
+  const { t } = await getLanguage();
+
+  const user = await getSessionUser();
+  if (!user) return { error: t("Neautorizat", "Not signed in") };
+
+  if (!items || items.length === 0) return { error: t("Masa este goală.", "The meal is empty.") };
 
   try {
-    const today = new Date().toISOString().split('T')[0]
-    
-    // 1. Creăm o înregistrare NOUĂ pentru masă
-    const { data: newMeal, error: mealError } = await supabase
-      .from("meals")
-      .insert({ user_id: user.id, performed_on: today, meal_type: mealType })
-      .select("id")
-      .single()
-      
-    if (mealError) throw mealError
-    const mealId = newMeal.id
-
-    // 2. Trecem prin fiecare aliment din ciorna (draft)
-    for (const item of items) {
-      const { food, grams } = item
-        let foodId = food.id
-
-      // Upsert produs în catalogul local (dacă vine de pe API SAU e creat manual)
-      if (!foodId) {
-        // Produsele cu barcode merg în catalogul comun, cu valorile din Open Food Facts
-        const catalogFood = food.barcode ? await getOrCacheBarcodeFood(String(food.barcode)) : null
-
-        if (catalogFood) {
-          foodId = catalogFood.id
-        } else {
-          // Aliment privat al utilizatorului (creat manual sau negăsit în catalog), șters odată cu contul
-          const { data: newFood, error: insertError } = await supabase
-            .from("foods")
-            .insert({
-              user_id: user.id,
-              name: food.name,
-              brand: food.brand || "Creat Manual",
-              kcal_per_100g: food.kcal_per_100g || 0,
-              protein_per_100g: food.protein_per_100g || 0,
-              carbs_per_100g: food.carbs_per_100g || 0,
-              fat_per_100g: food.fat_per_100g || 0,
-              fiber_per_100g: food.fiber_per_100g || 0
-            })
-            .select("id")
-            .single()
-            
-          if (insertError) throw insertError
-          foodId = newFood.id
-        }
+    const today = new Date().toISOString().split("T")[0];
+    const mappedItems = items.map((item) => {
+      const f = item.food;
+      const grams = Number(item.grams);
+      if (f.id && UUID_REGEX.test(f.id)) {
+        return { foodId: f.id, grams };
       }
+      if (f.barcode && /^\d{4,20}$/.test(String(f.barcode))) {
+        return {
+          barcode: String(f.barcode),
+          customFood: {
+            name: f.name,
+            brand: f.brand || "Creat Manual",
+            kcalPer100g: Number(f.kcal_per_100g ?? f.kcalPer100g ?? 0),
+            proteinPer100g: Number(f.protein_per_100g ?? f.proteinPer100g ?? 0),
+            carbsPer100g: Number(f.carbs_per_100g ?? f.carbsPer100g ?? 0),
+            fatPer100g: Number(f.fat_per_100g ?? f.fatPer100g ?? 0),
+            fiberPer100g: Number(f.fiber_per_100g ?? f.fiberPer100g ?? 0),
+          },
+          grams,
+        };
+      }
+      return {
+        customFood: {
+          name: f.name,
+          brand: f.brand || "Creat Manual",
+          kcalPer100g: Number(f.kcal_per_100g ?? f.kcalPer100g ?? 0),
+          proteinPer100g: Number(f.protein_per_100g ?? f.proteinPer100g ?? 0),
+          carbsPer100g: Number(f.carbs_per_100g ?? f.carbsPer100g ?? 0),
+          fatPer100g: Number(f.fat_per_100g ?? f.fatPer100g ?? 0),
+          fiberPer100g: Number(f.fiber_per_100g ?? f.fiberPer100g ?? 0),
+        },
+        grams,
+      };
+    });
 
-      // 3. Calculăm macros și inserăm alimentul în masa tocmai creată
-      const multiplier = grams / 100
-      const { error: itemError } = await supabase
-        .from("meal_items")
-        .insert({
-          meal_id: mealId,
-          food_id: foodId,
-          consumed_weight_g: grams,
-          total_kcal: Math.round(food.kcal_per_100g * multiplier),
-          total_protein_g: Math.round((food.protein_per_100g * multiplier) * 10) / 10,
-          total_carbs_g: Math.round((food.carbs_per_100g * multiplier) * 10) / 10,
-          total_fat_g: Math.round((food.fat_per_100g * multiplier) * 10) / 10,
-        })
+    await serverApi("/meals", {
+      method: "POST",
+      body: {
+        mealType,
+        performedOn: today,
+        items: mappedItems,
+      },
+    });
 
-      if (itemError) throw itemError
-    }
-
-    revalidatePath("/meals")
-    revalidatePath("/meals/history")
-    return { success: true }
-  } catch (error: any) {
-    console.error("Eroare la salvarea mesei:", error)
-    return { error: error.message || t("A apărut o eroare la salvare.", "An error occurred while saving.") }
+    revalidatePath("/meals");
+    revalidatePath("/meals/history");
+    return { success: true };
+  } catch (err) {
+    console.error("Eroare la salvarea mesei:", err);
+    return {
+      error: err instanceof Error ? err.message : t("A apărut o eroare la salvare.", "An error occurred while saving."),
+    };
   }
 }
 
-// --- FUNCȚII PENTRU ȘABLOANE (TEMPLATES) ---
+export async function saveMealTemplate(name: string, items: unknown[]) {
+  const { t } = await getLanguage();
 
-export async function saveMealTemplate(name: string, items: any[]) {
-  const { t } = await getLanguage()
-
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: t("Neautorizat", "Not signed in") }
+  const user = await getSessionUser();
+  if (!user) return { error: t("Neautorizat", "Not signed in") };
 
   try {
-    const { error } = await supabase
-      .from("meal_templates")
-      .insert({
-        user_id: user.id,
-        name: name,
-        items: items // Salvăm tot array-ul exact așa cum e în ciornă!
-      })
-
-    if (error) throw error
-    
-    revalidatePath("/meals/insert")
-    return { success: true }
-  } catch (error: any) {
-    console.error("Eroare la salvarea șablonului:", error)
-    return { error: t("Nu am putut salva șablonul.", "Could not save the template.") }
+    await serverApi("/meals/templates", {
+      method: "POST",
+      body: { name, items },
+    });
+    revalidatePath("/meals/insert");
+    return { success: true };
+  } catch (err) {
+    console.error("Eroare la salvarea șablonului:", err);
+    return { error: t("Nu am putut salva șablonul.", "Could not save the template.") };
   }
 }
 
 export async function getUserTemplates() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return []
-
-  const { data, error } = await supabase
-    .from("meal_templates")
-    .select("*")
-    .order("created_at", { ascending: false })
-
-  if (error) {
-    console.error("Eroare la preluarea șabloanelor:", error)
-    return []
-  }
-
-  return data || []
-}
-
-// --- ADAUGĂ ASTEA LA FINALUL FIȘIERULUI app/meals/actions.ts ---
-
-export async function getUserTargets() {
-  const { t } = await getLanguage()
-
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: t("Neautorizat", "Not signed in") }
-
-  const { data, error } = await supabase
-    .from("user_targets")
-    .select("*")
-    .eq("user_id", user.id)
-    .single()
-
-  // Dacă utilizatorul nu și-a setat încă un target (PGRST116 înseamnă Not Found în Supabase)
-  if (error && error.code !== 'PGRST116') {
-    console.error(error)
-    return { error: t("Eroare la citire targeturi.", "Could not load goals.") }
-  }
-
-  // Returnăm datele din DB sau niște valori default de bun simț
-  return { 
-    targets: data || { kcal: 2200, protein: 160, carbs: 250, fat: 70, fiber: 30 } 
-  }
-}
-
-export async function saveUserTargets(targets: any) {
-  const { t } = await getLanguage()
-
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: t("Neautorizat", "Not signed in") }
+  const user = await getSessionUser();
+  if (!user) return [];
 
   try {
-    const { error } = await supabase
-      .from("user_targets")
-      .upsert({ 
-        user_id: user.id, 
-        kcal: targets.kcal, 
-        protein: targets.protein, 
-        carbs: targets.carbs, 
-        fat: targets.fat,
-        fiber: targets.fiber,
-        updated_at: new Date().toISOString()
-      })
-      
-    if (error) throw error
-    return { success: true }
-  } catch (error: any) {
-    console.error(error)
-    return { error: t("Nu s-au putut salva targeturile.", "Could not save goals.") }
+    return await serverApi<{ id: string; name: string; items: unknown[]; createdAt: string }[]>("/meals/templates");
+  } catch (err) {
+    console.error("Eroare la preluarea șabloanelor:", err);
+    return [];
+  }
+}
+
+export async function getUserTargets() {
+  const { t } = await getLanguage();
+
+  const user = await getSessionUser();
+  if (!user) return { error: t("Neautorizat", "Not signed in") };
+
+  try {
+    const res = await serverApi<{
+      targets: { kcal: number; protein: number; carbs: number; fat: number; fiber: number };
+    }>("/meals/targets");
+    return {
+      targets: res.targets || { kcal: 2200, protein: 160, carbs: 250, fat: 70, fiber: 30 },
+    };
+  } catch (err) {
+    console.error(err);
+    return { error: t("Eroare la citire targeturi.", "Could not load goals.") };
+  }
+}
+
+export async function saveUserTargets(targets: {
+  kcal: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  fiber: number;
+}) {
+  const { t } = await getLanguage();
+
+  const user = await getSessionUser();
+  if (!user) return { error: t("Neautorizat", "Not signed in") };
+
+  try {
+    await serverApi("/meals/targets", {
+      method: "PUT",
+      body: {
+        kcal: Math.round(Number(targets.kcal)),
+        protein: Math.round(Number(targets.protein)),
+        carbs: Math.round(Number(targets.carbs)),
+        fat: Math.round(Number(targets.fat)),
+        fiber: Math.round(Number(targets.fiber)),
+      },
+    });
+    return { success: true };
+  } catch (err) {
+    console.error(err);
+    return { error: t("Nu s-au putut salva targeturile.", "Could not save goals.") };
   }
 }

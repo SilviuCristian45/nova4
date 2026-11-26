@@ -2,56 +2,46 @@
 
 import { revalidatePath } from "next/cache";
 import { getLanguage } from "@/app/language";
-import { createClient } from "@/lib/supabase/server";
+import { getSessionUser, serverApi } from "@/lib/api/server";
 
 export async function markNotificationReadAction(id: string): Promise<{ error?: string; success?: boolean }> {
   const { t } = await getLanguage();
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) return { error: t("Neautorizat.", "Not signed in.") };
 
-  const { error } = await supabase
-    .from("notifications")
-    .update({ read_at: new Date().toISOString() })
-    .eq("id", id)
-    .eq("user_id", user.id)
-    .is("read_at", null);
-
-  if (error) return { error: error.message };
-  revalidatePath("/notifications");
-  return { success: true };
+  try {
+    await serverApi(`/notifications/${encodeURIComponent(id)}/read`, { method: "PATCH" });
+    revalidatePath("/notifications");
+    return { success: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : t("Eroare.", "Failed.") };
+  }
 }
 
 export async function markAllNotificationsReadAction(): Promise<{ error?: string; success?: boolean }> {
   const { t } = await getLanguage();
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) return { error: t("Neautorizat.", "Not signed in.") };
 
-  const { error } = await supabase
-    .from("notifications")
-    .update({ read_at: new Date().toISOString() })
-    .eq("user_id", user.id)
-    .is("read_at", null);
-
-  if (error) return { error: error.message };
-  revalidatePath("/notifications");
-  return { success: true };
+  try {
+    await serverApi("/notifications/read-all", { method: "POST" });
+    revalidatePath("/notifications");
+    return { success: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : t("Eroare.", "Failed.") };
+  }
 }
 
 export async function deleteNotificationAction(id: string): Promise<{ error?: string; success?: boolean }> {
   const { t } = await getLanguage();
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) return { error: t("Neautorizat.", "Not signed in.") };
 
-  const { error } = await supabase
-    .from("notifications")
-    .delete()
-    .eq("id", id)
-    .eq("user_id", user.id);
-
-  if (error) return { error: error.message };
-  revalidatePath("/notifications");
-  return { success: true };
+  try {
+    await serverApi(`/notifications/${encodeURIComponent(id)}`, { method: "DELETE" });
+    revalidatePath("/notifications");
+    return { success: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : t("Eroare.", "Failed.") };
+  }
 }

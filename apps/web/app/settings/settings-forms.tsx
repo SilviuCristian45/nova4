@@ -2,6 +2,7 @@
 
 import { Text, useLanguage } from "@/app/components/language-provider"
 import { useOffline } from "@/lib/offline/client"
+import { clientApi } from "@/lib/api/client"
 import type { UserRole } from "@/lib/coach/types"
 import { AlertTriangle, Award, Download, Loader2, Upload } from "lucide-react"
 import Link from "next/link"
@@ -236,17 +237,25 @@ export function AccountForms({ email }: { email: string }) {
 
   return (
     <Section title={<Text ro="Cont" en="Account" />}>
-      <form action={emailAction} className="flex flex-col gap-3">
-        <Field label={<Text ro="E-mail" en="Email" />}>
+      <form action={emailAction} className="grid gap-3 sm:grid-cols-2">
+        <Field label={<Text ro="E-mail nou" en="New email" />}>
           <input name="email" type="email" required defaultValue={email} autoComplete="email" className={inputClass} />
         </Field>
-        <div className="flex flex-col gap-3">
+        <Field label={<Text ro="Parola curentă" en="Current password" />}>
+          <input name="currentPassword" type="password" required autoComplete="current-password" className={inputClass} />
+        </Field>
+        <div className="flex flex-col gap-3 sm:col-span-2">
           <Submit pending={emailPending}><Text ro="Schimbă emailul" en="Change email" /></Submit>
           <Status state={emailState} />
         </div>
       </form>
       <div className="h-px bg-line" />
       <form action={passwordAction} className="grid gap-3 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <Field label={<Text ro="Parola curentă" en="Current password" />}>
+            <input name="currentPassword" type="password" required autoComplete="current-password" className={inputClass} />
+          </Field>
+        </div>
         <Field label={<Text ro="Parolă nouă" en="New password" />}>
           <input name="password" type="password" required minLength={8} autoComplete="new-password" className={inputClass} />
         </Field>
@@ -272,16 +281,16 @@ export function DataPortability() {
     setPending(true)
     setState({})
     try {
-      const response = await fetch("/api/account/import", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: file,
+      const text = await file.text()
+      const parsed = JSON.parse(text) as Record<string, unknown>
+      const result = await clientApi<{ counts: Record<string, number> }>("/account/import", {
+        method: "POST",
+        body: { data: parsed },
       })
-      const result = await response.json()
-      if (!response.ok) { setState({ error: result.error ?? t("Importul a eșuat.", "Import failed.") }); return }
-      const counts = result.counts as Record<string, number>
+      const counts = result.counts
       const total = Object.values(counts).reduce((sum, n) => sum + n, 0)
       setState({ message: t(`Import reușit: ${total} înregistrări noi (${counts.workouts} antrenamente, ${counts.meals} mese).`,
         `Import complete: ${total} new records (${counts.workouts} workouts, ${counts.meals} meals).`) })
-      // Refresh this device's offline copy with the imported history.
       await offline.sync()
     } catch (error) {
       setState({ error: error instanceof Error ? error.message : t("Importul a eșuat.", "Import failed.") })
@@ -299,7 +308,7 @@ export function DataPortability() {
             <Text ro="Un fișier JSON cu profilul, antrenamentele, seturile, mesele, pașii, greutatea și check-in-urile." en="A JSON file with your profile, workouts, sets, meals, steps, weight and check-ins." />
           </p>
         </div>
-        <a href="/api/account/export" download className={buttonRecipe({ variant: "secondary", className: "shrink-0" })}>
+        <a href="/api/v1/account/export" download="replog-export.json" className={buttonRecipe({ variant: "secondary", className: "shrink-0" })}>
           <Download className="size-[18px]" /><Text ro="Descarcă" en="Download" />
         </a>
       </div>

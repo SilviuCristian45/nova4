@@ -20,6 +20,7 @@ import {
   mondayOfWeek,
   normalizeInviteCode,
   parseRangeDays,
+  pickNextProgramWorkout,
   summarizeNutritionByDay,
   validateCheckinPhotoPaths,
   validateFeedbackInput,
@@ -34,11 +35,13 @@ import {
   DailyWeightEntity,
   EnrollmentEntity,
   MealEntity,
+  MealPlanEntity,
   ProfileEntity,
   ProgramEntity,
   ProgramWorkoutCardioEntity,
   ProgramWorkoutEntity,
   ProgramWorkoutExerciseEntity,
+  UserTargetEntity,
   WeeklyCheckinEntity,
   WorkoutEntity,
   WorkoutFeedbackEntity,
@@ -121,6 +124,8 @@ export class CoachService {
     private readonly dataSource: DataSource,
     @InjectRepository(ProgramEntity)
     private readonly programsRepo: Repository<ProgramEntity>,
+    @InjectRepository(ProgramWorkoutEntity)
+    private readonly programWorkoutsRepo: Repository<ProgramWorkoutEntity>,
     @InjectRepository(EnrollmentEntity)
     private readonly enrollmentsRepo: Repository<EnrollmentEntity>,
     @InjectRepository(CoachProfileEntity)
@@ -154,9 +159,34 @@ export class CoachService {
   async listCoachPrograms(coachId: string) {
     const rows = await this.programsRepo.find({
       where: { coachId },
+      relations: { workouts: true },
       order: { updatedAt: "DESC" },
     });
-    return rows.map(serializeProgram);
+    const programIds = rows.map((p) => p.id);
+    const enrollments =
+      programIds.length > 0
+        ? await this.enrollmentsRepo.find({
+            where: { coachId, programId: In(programIds) },
+            select: { id: true, programId: true, status: true },
+          })
+        : [];
+    const byProgram = new Map<string, { active: number; pending: number }>();
+    for (const e of enrollments) {
+      if (!e.programId) continue;
+      const entry = byProgram.get(e.programId) ?? { active: 0, pending: 0 };
+      if (e.status === "active") entry.active++;
+      else if (e.status === "pending") entry.pending++;
+      byProgram.set(e.programId, entry);
+    }
+    return rows.map((p) => {
+      const counts = byProgram.get(p.id) ?? { active: 0, pending: 0 };
+      return {
+        ...serializeProgram(p),
+        workoutCount: p.workouts?.length ?? 0,
+        activeEnrollmentsCount: counts.active,
+        pendingEnrollmentsCount: counts.pending,
+      };
+    });
   }
 
   async getCoachProgram(coachId: string, id: string) {
@@ -488,49 +518,188 @@ export class CoachService {
 
   async getDashboard(coachId: string) {
     const today = localDate();
-    const [enrollments, unreviewedCheckins, programCount] = await Promise.all([
+    const recentCutoff = cutoffDateYmd(today, 14);
+    const [enrollments, unreviewedCheckinRows, programs, mealPlansCount] = await Promise.all([
       this.enrollmentsRepo.find({ where: { coachId }, order: { createdAt: "DESC" } }),
-      this.checkinsRepo.count({ where: { coachId, reviewedAt: IsNull() } }),
-      this.programsRepo.count({ where: { coachId } }),
+      this.checkinsRepo.find({
+        where: { coachId, reviewedAt: IsNull() },
+        order: { createdAt: "DESC" },
+        take: 20,
+      }),
+      this.programsRepo.find({ where: { coachId }, select: { id: true, title: true, status: true } }),
+      this.dataSource.getRepository(MealPlanEntity).count({ where: { coachId } }),
     ]);
 
-    const activeClientIds = [...new Set(enrollments.filter((e) => e.status === "active").map((e) => e.clientId))];
+    const programMap = new Map(programs.map((p) => [p.id, p.title]));
+    const publishedProgramsCount = programs.filter((p) => p.status === "published").length;
+
+    const activeEnrollments = enrollments.filter((e) => e.status === "active");
+    const pendingEnrollments = enrollments.filter((e) => e.status === "pending");
+    const activeClientIds = [...new Set(activeEnrollments.map((e) => e.clientId))];
+    const allClientIds = [...new Set(enrollments.map((e) => e.clientId))];
+
+    const [profiles, coachProfile] = await Promise.all([
+      allClientIds.length > 0
+        ? this.profilesRepo.find({ where: { id: In(allClientIds) }, select: { id: true, displayName: true } })
+        : Promise.resolve([]),
+      this.coachProfilesRepo.findOne({ where: { userId: coachId }, select: { displayName: true } }),
+    ]);
+    const clientNameMap = new Map(profiles.map((p) => [p.id, p.displayName?.trim() || null]));
+    const coachName = coachProfile?.displayName?.trim() || "Coach";
+
     const lastWorkoutByClient = new Map<string, string>();
+    let recentWorkoutsRaw: WorkoutEntity[] = [];
     if (activeClientIds.length > 0) {
-      const lastRows: { user_id: string; last_date: string }[] = await this.dataSource.query(
-        `SELECT user_id, MAX(performed_on)::text AS last_date
-         FROM public.workouts
-         WHERE user_id = ANY($1::uuid[])
-         GROUP BY user_id`,
-        [activeClientIds],
-      );
+      const [lastRows, recentData] = await Promise.all([
+        this.dataSource.query<{ user_id: string; last_date: string }[]>(
+          `SELECT user_id, MAX(performed_on)::text AS last_date
+           FROM public.workouts
+           WHERE user_id = ANY($1::uuid[])
+           GROUP BY user_id`,
+          [activeClientIds],
+        ),
+        this.workoutsRepo
+          .createQueryBuilder("w")
+          .leftJoinAndSelect("w.workoutSets", "s")
+          .leftJoinAndSelect("w.cardioSessions", "c")
+          .where("w.userId IN (:...ids) AND w.performedOn >= :cutoff", {
+            ids: activeClientIds,
+            cutoff: recentCutoff,
+          })
+          .orderBy("w.performedOn", "DESC")
+          .addOrderBy("w.createdAt", "DESC")
+          .take(20)
+          .getMany(),
+      ]);
       for (const row of lastRows) {
         lastWorkoutByClient.set(row.user_id, row.last_date.slice(0, 10));
       }
+      recentWorkoutsRaw = recentData;
     }
 
-    const inactiveClients: string[] = [];
-    for (const enrollment of enrollments) {
-      if (enrollment.status !== "active") continue;
-      const adherence = classifyClientAdherence(
-        {
-          lastWorkoutDate: lastWorkoutByClient.get(enrollment.clientId) ?? null,
-          enrollmentStartedAt: (enrollment.startedAt ?? enrollment.createdAt).toISOString(),
-        },
-        today,
-      );
-      if (adherence.kind === "inactive" || adherence.kind === "new_overdue") {
-        if (!inactiveClients.includes(enrollment.clientId)) inactiveClients.push(enrollment.clientId);
+    const recentWorkoutIds = recentWorkoutsRaw.map((w) => w.id);
+    const feedbackByWorkout = new Map<
+      string,
+      {
+        id: string;
+        workoutId: string;
+        authorId: string;
+        authorName: string;
+        isCoachAuthor: boolean;
+        body: string;
+        reaction: string | null;
+        createdAt: string;
+      }[]
+    >();
+    if (recentWorkoutIds.length > 0) {
+      const fbRows = await this.feedbackRepo.find({
+        where: { workoutId: In(recentWorkoutIds) },
+        order: { createdAt: "ASC" },
+      });
+      for (const row of fbRows) {
+        const isCoachAuthor = row.authorId === coachId;
+        const list = feedbackByWorkout.get(row.workoutId) ?? [];
+        list.push({
+          id: row.id,
+          workoutId: row.workoutId,
+          authorId: row.authorId,
+          authorName: isCoachAuthor ? coachName : (clientNameMap.get(row.authorId) ?? `Client #${row.authorId.slice(0, 6)}`),
+          isCoachAuthor,
+          body: row.body,
+          reaction: row.reaction ?? null,
+          createdAt: row.createdAt.toISOString(),
+        });
+        feedbackByWorkout.set(row.workoutId, list);
       }
     }
 
+    const activeStartByClient = new Map<string, string>();
+    for (const e of activeEnrollments) {
+      const start = (e.startedAt ?? e.createdAt).toISOString();
+      const prev = activeStartByClient.get(e.clientId);
+      if (!prev || start < prev) activeStartByClient.set(e.clientId, start);
+    }
+
+    const inactiveClients: string[] = [];
+    const pausedAlerts: { clientId: string; name: string | null; days: number; lastDate: string }[] = [];
+    const newNoWorkouts: { clientId: string; name: string | null; daysSinceStart: number; overdue: boolean }[] = [];
+
+    for (const clientId of activeClientIds) {
+      const lastWorkoutDate = lastWorkoutByClient.get(clientId) ?? null;
+      const adherence = classifyClientAdherence(
+        {
+          lastWorkoutDate,
+          enrollmentStartedAt: activeStartByClient.get(clientId) ?? null,
+        },
+        today,
+      );
+      if (adherence.kind === "inactive" && lastWorkoutDate) {
+        inactiveClients.push(clientId);
+        pausedAlerts.push({
+          clientId,
+          name: clientNameMap.get(clientId) ?? null,
+          days: adherence.daysSinceWorkout,
+          lastDate: lastWorkoutDate,
+        });
+      } else if (adherence.kind === "new_no_workouts" || adherence.kind === "new_overdue") {
+        if (adherence.kind === "new_overdue") inactiveClients.push(clientId);
+        newNoWorkouts.push({
+          clientId,
+          name: clientNameMap.get(clientId) ?? null,
+          daysSinceStart: adherence.daysSinceStart,
+          overdue: adherence.kind === "new_overdue",
+        });
+      }
+    }
+    pausedAlerts.sort((a, b) => b.days - a.days);
+    newNoWorkouts.sort((a, b) => b.daysSinceStart - a.daysSinceStart);
+
+    const unreviewedCheckins = (await this.attachCheckinPhotoUrls(unreviewedCheckinRows)).map((item) => ({
+      ...item,
+      clientName: clientNameMap.get(item.clientId) ?? null,
+    }));
+
     return {
       activeClientsCount: activeClientIds.length,
-      pendingRequestsCount: enrollments.filter((e) => e.status === "pending").length,
-      unreviewedCheckinsCount: unreviewedCheckins,
-      programsCount: programCount,
+      pendingRequestsCount: pendingEnrollments.length,
+      unreviewedCheckinsCount: unreviewedCheckinRows.length,
+      programsCount: programs.length,
+      publishedProgramsCount,
+      mealPlansCount,
       inactiveClientsCount: inactiveClients.length,
       inactiveClientIds: inactiveClients,
+      pendingRequests: pendingEnrollments.map((e) => ({
+        id: e.id,
+        clientId: e.clientId,
+        clientName: clientNameMap.get(e.clientId) ?? null,
+        programTitle: e.programId ? (programMap.get(e.programId) ?? null) : null,
+        createdAt: e.createdAt.toISOString(),
+      })),
+      unreviewedCheckins,
+      pausedAlerts,
+      newNoWorkouts,
+      recentWorkouts: recentWorkoutsRaw.map((w) => ({
+        id: w.id,
+        userId: w.userId,
+        clientName: clientNameMap.get(w.userId) ?? null,
+        performedOn: String(w.performedOn).slice(0, 10),
+        split: w.split,
+        workoutMode: w.workoutMode,
+        createdAt: w.createdAt.toISOString(),
+        sets: (w.workoutSets ?? []).map((s) => ({
+          exercise: s.exercise,
+          weight: Number(s.weight),
+          reps: s.reps,
+          rir: s.rir ?? null,
+          setType: s.setType,
+          isPr: Boolean(s.isPr),
+        })),
+        cardio: (w.cardioSessions ?? []).map((c) => ({
+          activity: c.activity,
+          durationMin: c.durationMin,
+        })),
+        feedback: feedbackByWorkout.get(w.id) ?? [],
+      })),
     };
   }
 
@@ -669,43 +838,96 @@ export class CoachService {
     const rangeDays = parseRangeDays(rangeRaw);
     const cutoff = cutoffDateYmd(localDate(), rangeDays);
 
-    const [profile, enrollments, note, workouts, steps, weights, dailyCheckins, weeklyCheckins] = await Promise.all([
-      this.profilesRepo.findOne({
-        where: { id: clientId },
-        select: { id: true, displayName: true, weightUnit: true, dailyStepsGoal: true },
-      }),
-      this.enrollmentsRepo.find({ where: { coachId, clientId }, order: { createdAt: "DESC" } }),
-      this.notesRepo.findOne({ where: { coachId, clientId } }),
-      this.workoutsRepo
-        .createQueryBuilder("w")
-        .leftJoinAndSelect("w.workoutSets", "s")
-        .leftJoinAndSelect("w.cardioSessions", "c")
-        .where("w.userId = :clientId AND w.performedOn >= :cutoff", { clientId, cutoff })
-        .orderBy("w.performedOn", "DESC")
-        .getMany(),
-      this.stepsRepo
-        .createQueryBuilder("s")
-        .where("s.userId = :clientId AND s.date >= :cutoff", { clientId, cutoff })
-        .orderBy("s.date", "ASC")
-        .getMany(),
-      this.weightRepo
-        .createQueryBuilder("w")
-        .where("w.userId = :clientId AND w.date >= :cutoff", { clientId, cutoff })
-        .orderBy("w.date", "ASC")
-        .getMany(),
-      this.dailyCheckinRepo
-        .createQueryBuilder("c")
-        .where("c.userId = :clientId AND c.date >= :cutoff", { clientId, cutoff })
-        .orderBy("c.date", "ASC")
-        .getMany(),
-      this.checkinsRepo.find({
-        where: { coachId, clientId },
-        order: { weekStart: "DESC" },
-        take: 24,
-      }),
+    const [profile, enrollments, note, workouts, steps, weights, dailyCheckins, weeklyCheckins, latestWorkoutRows] =
+      await Promise.all([
+        this.profilesRepo.findOne({
+          where: { id: clientId },
+          select: { id: true, displayName: true, weightUnit: true, dailyStepsGoal: true },
+        }),
+        this.enrollmentsRepo.find({ where: { coachId, clientId }, order: { createdAt: "DESC" } }),
+        this.notesRepo.findOne({ where: { coachId, clientId } }),
+        this.workoutsRepo
+          .createQueryBuilder("w")
+          .leftJoinAndSelect("w.workoutSets", "s")
+          .leftJoinAndSelect("w.cardioSessions", "c")
+          .where("w.userId = :clientId AND w.performedOn >= :cutoff", { clientId, cutoff })
+          .orderBy("w.performedOn", "DESC")
+          .getMany(),
+        this.stepsRepo
+          .createQueryBuilder("s")
+          .where("s.userId = :clientId AND s.date >= :cutoff", { clientId, cutoff })
+          .orderBy("s.date", "ASC")
+          .getMany(),
+        this.weightRepo
+          .createQueryBuilder("w")
+          .where("w.userId = :clientId AND w.date >= :cutoff", { clientId, cutoff })
+          .orderBy("w.date", "ASC")
+          .getMany(),
+        this.dailyCheckinRepo
+          .createQueryBuilder("c")
+          .where("c.userId = :clientId AND c.date >= :cutoff", { clientId, cutoff })
+          .orderBy("c.date", "DESC")
+          .getMany(),
+        this.checkinsRepo.find({
+          where: { coachId, clientId },
+          order: { weekStart: "DESC" },
+          take: 24,
+        }),
+        this.dataSource.query<{ last_date: string }[]>(
+          `SELECT MAX(performed_on)::text AS last_date FROM public.workouts WHERE user_id = $1`,
+          [clientId],
+        ),
+      ]);
+
+    const shareNutrition = enrollments.some((e) => e.status === "active" && e.shareNutrition);
+    const pwIds = [...new Set(workouts.map((w) => w.programWorkoutId).filter((x): x is string => Boolean(x)))];
+    const workoutIds = workouts.map((w) => w.id);
+
+    const [enrichedCheckins, pwRows, fbRows, targets, coachProfile] = await Promise.all([
+      this.attachCheckinPhotoUrls(weeklyCheckins),
+      pwIds.length > 0
+        ? this.programWorkoutsRepo.find({ where: { id: In(pwIds) }, select: { id: true, title: true } })
+        : Promise.resolve([]),
+      workoutIds.length > 0
+        ? this.feedbackRepo.find({ where: { workoutId: In(workoutIds) }, order: { createdAt: "ASC" } })
+        : Promise.resolve([]),
+      shareNutrition
+        ? this.dataSource.getRepository(UserTargetEntity).findOne({ where: { userId: clientId } })
+        : Promise.resolve(null),
+      this.coachProfilesRepo.findOne({ where: { userId: coachId }, select: { displayName: true } }),
     ]);
 
-    const enrichedCheckins = await this.attachCheckinPhotoUrls(weeklyCheckins);
+    const pwTitleMap = new Map(pwRows.map((p) => [p.id, p.title]));
+    const clientName = profile?.displayName?.trim() || `Client #${clientId.slice(0, 6)}`;
+    const coachName = coachProfile?.displayName?.trim() || "Coach";
+    const feedbackByWorkout = new Map<
+      string,
+      {
+        id: string;
+        workoutId: string;
+        authorId: string;
+        authorName: string;
+        isCoachAuthor: boolean;
+        body: string;
+        reaction: string | null;
+        createdAt: string;
+      }[]
+    >();
+    for (const row of fbRows) {
+      const isCoachAuthor = row.authorId === coachId;
+      const list = feedbackByWorkout.get(row.workoutId) ?? [];
+      list.push({
+        id: row.id,
+        workoutId: row.workoutId,
+        authorId: row.authorId,
+        authorName: isCoachAuthor ? coachName : clientName,
+        isCoachAuthor,
+        body: row.body,
+        reaction: row.reaction ?? null,
+        createdAt: row.createdAt.toISOString(),
+      });
+      feedbackByWorkout.set(row.workoutId, list);
+    }
 
     return {
       client: profile
@@ -717,6 +939,16 @@ export class CoachService {
           }
         : null,
       rangeDays,
+      latestWorkoutDate: latestWorkoutRows[0]?.last_date ? latestWorkoutRows[0].last_date.slice(0, 10) : null,
+      targets: targets
+        ? {
+            kcal: targets.kcal,
+            protein: targets.protein,
+            carbs: targets.carbs,
+            fat: targets.fat,
+            fiber: targets.fiber,
+          }
+        : null,
       enrollments: enrollments.map((e) => ({
         id: e.id,
         programId: e.programId,
@@ -724,6 +956,7 @@ export class CoachService {
         shareNutrition: e.shareNutrition,
         currentWeek: e.currentWeek,
         startedAt: e.startedAt?.toISOString() ?? null,
+        createdAt: e.createdAt.toISOString(),
       })),
       note: note ? { note: note.note, updatedAt: note.updatedAt.toISOString() } : { note: "", updatedAt: null },
       workouts: workouts.map((w) => ({
@@ -731,8 +964,28 @@ export class CoachService {
         performedOn: String(w.performedOn).slice(0, 10),
         split: w.split,
         workoutMode: w.workoutMode,
+        programWorkoutTitle: w.programWorkoutId ? (pwTitleMap.get(w.programWorkoutId) ?? null) : null,
         setsCount: w.workoutSets?.length ?? 0,
         cardioMin: (w.cardioSessions ?? []).reduce((sum, c) => sum + c.durationMin, 0),
+        sets: [...(w.workoutSets ?? [])]
+          .sort((a, b) => a.setNumber - b.setNumber)
+          .map((s) => ({
+            id: s.id,
+            exercise: s.exercise,
+            setNumber: s.setNumber,
+            setType: s.setType,
+            weight: Number(s.weight),
+            reps: s.reps,
+            rir: s.rir ?? null,
+            notes: s.notes ?? null,
+            isPr: Boolean(s.isPr),
+          })),
+        cardio: (w.cardioSessions ?? []).map((c) => ({
+          id: c.id,
+          activity: c.activity,
+          durationMin: c.durationMin,
+        })),
+        feedback: feedbackByWorkout.get(w.id) ?? [],
       })),
       steps: steps.map((s) => ({ date: String(s.date).slice(0, 10), steps: s.steps })),
       weights: weights.map((w) => ({ date: String(w.date).slice(0, 10), weightKg: Number(w.weightKg) })),
@@ -789,9 +1042,27 @@ export class CoachService {
   // Explore & Client Enrollment Flows
   // =========================================================================
 
+  async listPublicCoaches() {
+    const coaches = await this.coachProfilesRepo.find({
+      where: { isPublic: true },
+      order: { displayName: "ASC" },
+    });
+    return coaches.map((c) => ({
+      userId: c.userId,
+      displayName: c.displayName,
+      bio: c.bio ?? null,
+      specialties: c.specialties ?? [],
+      isPublic: c.isPublic,
+      acceptingClients: c.acceptingClients,
+      createdAt: c.createdAt.toISOString(),
+      updatedAt: c.updatedAt.toISOString(),
+    }));
+  }
+
   async listPublicPrograms() {
     const programs = await this.programsRepo.find({
       where: { status: "published", accessType: "public", assignedClientId: IsNull() },
+      relations: { workouts: true },
       order: { updatedAt: "DESC" },
     });
     if (programs.length === 0) return [];
@@ -802,6 +1073,7 @@ export class CoachService {
 
     return programs.map((p) => ({
       ...serializeProgram(p),
+      workoutCount: p.workouts?.length ?? 0,
       coachName: coachNameMap.get(p.coachId) ?? "Coach",
     }));
   }
@@ -905,16 +1177,191 @@ export class CoachService {
       where: { clientId },
       order: { createdAt: "DESC" },
     });
-    return rows.map((e) => ({
-      id: e.id,
-      coachId: e.coachId,
-      programId: e.programId,
-      status: e.status,
-      shareNutrition: e.shareNutrition,
-      currentWeek: e.currentWeek,
-      startedAt: e.startedAt?.toISOString() ?? null,
-      createdAt: e.createdAt.toISOString(),
+    if (rows.length === 0) return [];
+
+    const programIds = [...new Set(rows.map((e) => e.programId).filter((id): id is string => Boolean(id)))];
+    const coachIds = [...new Set(rows.map((e) => e.coachId))];
+    const [programs, coachProfiles, pWorkouts, loggedWorkouts] = await Promise.all([
+      programIds.length > 0
+        ? this.programsRepo.find({ where: { id: In(programIds) }, select: { id: true, title: true } })
+        : Promise.resolve([]),
+      coachIds.length > 0
+        ? this.coachProfilesRepo.find({ where: { userId: In(coachIds) }, select: { userId: true, displayName: true } })
+        : Promise.resolve([]),
+      programIds.length > 0
+        ? this.programWorkoutsRepo.find({
+            where: { programId: In(programIds) },
+            select: { id: true, programId: true, weekNumber: true, dayNumber: true, position: true },
+          })
+        : Promise.resolve([]),
+      rows.length > 0
+        ? this.workoutsRepo
+            .createQueryBuilder("w")
+            .select("w.enrollment_id", "enrollment_id")
+            .addSelect("w.program_workout_id", "program_workout_id")
+            .where("w.user_id = :clientId AND w.enrollment_id IN (:...eids) AND w.program_workout_id IS NOT NULL", {
+              clientId,
+              eids: rows.map((r) => r.id),
+            })
+            .getRawMany<{ enrollment_id: string; program_workout_id: string }>()
+        : Promise.resolve([]),
+    ]);
+    const progMap = new Map(programs.map((p) => [p.id, p.title]));
+    const coachMap = new Map(coachProfiles.map((c) => [c.userId, c.displayName]));
+    const workoutsByProgram = new Map<string, { id: string; week_number: number; day_number: number; position: number }[]>();
+    for (const w of pWorkouts) {
+      const list = workoutsByProgram.get(w.programId) ?? [];
+      list.push({ id: w.id, week_number: w.weekNumber, day_number: w.dayNumber, position: w.position });
+      workoutsByProgram.set(w.programId, list);
+    }
+    const completedByEnrollment = new Map<string, Set<string>>();
+    for (const lw of loggedWorkouts) {
+      const set = completedByEnrollment.get(lw.enrollment_id) ?? new Set<string>();
+      set.add(lw.program_workout_id);
+      completedByEnrollment.set(lw.enrollment_id, set);
+    }
+
+    return rows.map((e) => {
+      const nextWorkout =
+        e.status === "active" && e.programId
+          ? pickNextProgramWorkout(
+              workoutsByProgram.get(e.programId) ?? [],
+              completedByEnrollment.get(e.id) ?? new Set(),
+              e.currentWeek,
+            )
+          : null;
+      return {
+        id: e.id,
+        coachId: e.coachId,
+        coachName: coachMap.get(e.coachId) ?? null,
+        programId: e.programId,
+        programTitle: e.programId ? (progMap.get(e.programId) ?? null) : null,
+        status: e.status,
+        shareNutrition: e.shareNutrition,
+        currentWeek: e.currentWeek,
+        nextWorkoutId: nextWorkout?.id ?? null,
+        startedAt: e.startedAt?.toISOString() ?? null,
+        createdAt: e.createdAt.toISOString(),
+      };
+    });
+  }
+
+  async getActiveProgramSummary(clientId: string) {
+    const activeEnrollments = await this.enrollmentsRepo.find({
+      where: { clientId, status: "active" },
+      order: { startedAt: "DESC" },
+      take: 5,
+    });
+    const activeEnrollment = activeEnrollments.find((e) => e.programId !== null);
+    if (!activeEnrollment || !activeEnrollment.programId) {
+      return { hasActiveCoach: activeEnrollments.length > 0, assignedProgram: null };
+    }
+
+    const [prog, coachProf, pWorkouts, doneRows] = await Promise.all([
+      this.programsRepo.findOne({ where: { id: activeEnrollment.programId }, select: { id: true, title: true } }),
+      this.coachProfilesRepo.findOne({ where: { userId: activeEnrollment.coachId }, select: { displayName: true } }),
+      this.programWorkoutsRepo.find({
+        where: { programId: activeEnrollment.programId },
+        relations: { exercises: true, cardio: true },
+        order: { weekNumber: "ASC", dayNumber: "ASC", position: "ASC" },
+      }),
+      this.workoutsRepo
+        .createQueryBuilder("w")
+        .select("w.program_workout_id", "program_workout_id")
+        .where("w.user_id = :clientId AND w.enrollment_id = :enrollmentId AND w.program_workout_id IS NOT NULL", {
+          clientId,
+          enrollmentId: activeEnrollment.id,
+        })
+        .getRawMany<{ program_workout_id: string }>(),
+    ]);
+
+    if (!prog) {
+      return { hasActiveCoach: activeEnrollments.length > 0, assignedProgram: null };
+    }
+
+    const completedIds = doneRows.map((r) => r.program_workout_id);
+    const workouts = pWorkouts.map((w) => ({
+      id: w.id,
+      weekNumber: w.weekNumber,
+      dayNumber: w.dayNumber,
+      position: w.position,
+      title: w.title,
+      workoutMode: w.workoutMode,
+      itemCount: w.workoutMode === "cardio" ? (w.cardio?.length ?? 0) : (w.exercises?.length ?? 0),
     }));
+
+    return {
+      hasActiveCoach: true,
+      assignedProgram: {
+        enrollmentId: activeEnrollment.id,
+        programId: prog.id,
+        programTitle: prog.title,
+        coachName: coachProf?.displayName ?? null,
+        currentWeek: activeEnrollment.currentWeek,
+        completedProgramWorkoutIds: completedIds,
+        workouts,
+      },
+    };
+  }
+
+  async getProgramWorkoutForClient(userId: string, programWorkoutId: string) {
+    if (!UUID_REGEX.test(programWorkoutId)) throw new NotFoundException("Program workout not found");
+    const pw = await this.programWorkoutsRepo.findOne({
+      where: { id: programWorkoutId },
+      relations: { exercises: true, cardio: true },
+    });
+    if (!pw) throw new NotFoundException("Program workout not found");
+
+    const program = await this.programsRepo.findOne({ where: { id: pw.programId } });
+    if (!program) throw new NotFoundException("Program not found");
+
+    if (program.coachId !== userId && program.accessType !== "public") {
+      const enrollment = await this.enrollmentsRepo.findOne({
+        where: { clientId: userId, programId: program.id, status: "active" },
+        select: { id: true },
+      });
+      if (!enrollment) {
+        throw new ForbiddenException("You do not have access to this program workout");
+      }
+    }
+
+    return {
+      id: pw.id,
+      programId: program.id,
+      programTitle: program.title,
+      title: pw.title,
+      weekNumber: pw.weekNumber,
+      dayNumber: pw.dayNumber,
+      workoutMode: pw.workoutMode,
+      split: pw.split,
+      notes: pw.notes ?? null,
+      exercises: [...(pw.exercises ?? [])]
+        .sort((a, b) => a.position - b.position)
+        .map((e) => ({
+          id: e.id,
+          program_workout_id: e.programWorkoutId,
+          position: e.position,
+          exercise: e.exercise,
+          set_type: e.setType,
+          target_sets: e.targetSets,
+          target_reps_min: e.targetRepsMin,
+          target_reps_max: e.targetRepsMax,
+          target_rir: e.targetRir ?? null,
+          target_weight_kg: e.targetWeightKg !== null ? Number(e.targetWeightKg) : null,
+          rest_seconds: e.restSeconds ?? null,
+          notes: e.notes ?? null,
+        })),
+      cardio: [...(pw.cardio ?? [])]
+        .sort((a, b) => a.position - b.position)
+        .map((c) => ({
+          id: c.id,
+          program_workout_id: c.programWorkoutId,
+          position: c.position,
+          activity: c.activity,
+          target_duration_min: c.targetDurationMin,
+          notes: c.notes ?? null,
+        })),
+    };
   }
 
   async cancelPendingEnrollment(clientId: string, enrollmentId: string) {

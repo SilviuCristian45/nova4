@@ -3,6 +3,8 @@ import type { NextConfig } from "next";
 import withPWAInit from "@ducanh2912/next-pwa";
 
 const isDev = process.env.NODE_ENV === "development";
+const internalApiUrl = (process.env.INTERNAL_API_URL?.trim() || "http://localhost:4000").replace(/\/+$/, "");
+
 const withPWA = withPWAInit({
   dest: "public",
   cacheOnFrontEndNav: false,
@@ -37,6 +39,14 @@ const nextConfig: NextConfig = {
   transpilePackages: ["@replog/shared"],
   turbopack: {},
   allowedDevOrigins: ["192.168.88.158", "unburned-unbargained-marsha.ngrok-free.dev"],
+  async rewrites() {
+    return [
+      {
+        source: "/api/v1/:path*",
+        destination: `${internalApiUrl}/api/v1/:path*`,
+      },
+    ];
+  },
 };
 
 export default isDev ? nextConfig : withPWA(nextConfig);

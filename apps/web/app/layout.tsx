@@ -11,8 +11,7 @@ import { OfflineProvider } from "@/lib/offline/client";
 import { OfflineStatus } from "./components/offline-status";
 import { DriveAutoSync } from "./components/drive-auto-sync";
 import { NotificationBell } from "./components/notification-bell";
-import { driveConfigured } from "@/lib/google-drive";
-import { createClient } from "@/lib/supabase/server";
+import { getSessionUser, serverApi } from "@/lib/api/server";
 import { pageWidth } from "./components/ui";
 
 const geistSans = Geist({
@@ -25,7 +24,6 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-// Setările pentru culorile telefonului (Status bar)
 export const viewport: Viewport = {
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#f5f4ef" },
@@ -60,16 +58,11 @@ export default async function RootLayout({
   let initialUnread = 0;
   let signedIn = false;
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const user = await getSessionUser();
     if (user) {
       signedIn = true;
-      const { count } = await supabase
-        .from("notifications")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", user.id)
-        .is("read_at", null);
-      initialUnread = count ?? 0;
+      const unreadRes = await serverApi<{ count: number }>("/notifications/unread");
+      initialUnread = unreadRes.count ?? 0;
     }
   } catch {
     // Gracefully skip if unauthenticated or offline shell.
@@ -84,7 +77,7 @@ export default async function RootLayout({
       <body className="min-h-full flex flex-col">
         <ThemeProvider
           attribute="class"
-          defaultTheme="system" // Poate fi "light", "dark" sau "system" (ia setarea iOS/Android)
+          defaultTheme="system"
           enableSystem
           disableTransitionOnChange
         >
@@ -97,7 +90,7 @@ export default async function RootLayout({
               <ThemeToggle />
             </div>
             <OfflineStatus />
-            {driveConfigured() && <DriveAutoSync />}
+            {signedIn && <DriveAutoSync />}
             {children}
             </OfflineProvider>
             </UnitsProvider>

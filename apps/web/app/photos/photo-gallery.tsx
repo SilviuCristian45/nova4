@@ -3,17 +3,16 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Camera, ExternalLink, GitCompare, Trash2, X } from "lucide-react";
-import { createClient } from "@/utils/supabase/client";
+import { clientApi } from "@/lib/api/client";
 import { localDate } from "@/lib/daily-metrics";
 import {
-  PHOTO_BUCKET, PHOTO_MAX_BYTES, PHOTO_MAX_PER_USER, PHOTO_NOTE_MAX, fitWithin, photoPath, type PhotoPose, type PhotoRow,
+  PHOTO_MAX_BYTES, PHOTO_MAX_PER_USER, PHOTO_NOTE_MAX, fitWithin, type PhotoPose, type PhotoRow,
 } from "@/lib/photos";
 import { useLanguage } from "@/app/components/language-provider";
 import { Button, Card, Empty, Field, IconButton, Input, Message, Segmented } from "@/app/components/ui";
 
 export type GalleryPhoto = PhotoRow & { url: string };
 
-// Shrinks the picked image in the browser (phone photos are several MB): long edge 1600 px, JPEG, EXIF rotation applied.
 async function toJpeg(file: File): Promise<Blob> {
   const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
   const { width, height } = fitWithin(bitmap.width, bitmap.height);
@@ -31,7 +30,7 @@ async function toJpeg(file: File): Promise<Blob> {
 
 const daysBetween = (a: string, b: string) => Math.round(Math.abs(Date.parse(b) - Date.parse(a)) / 86_400_000);
 
-export default function PhotoGallery({ userId, photos }: { userId: string; photos: GalleryPhoto[] }) {
+export default function PhotoGallery({ photos }: { photos: GalleryPhoto[] }) {
   const { t, locale } = useLanguage();
   const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -66,30 +65,46 @@ export default function PhotoGallery({ userId, photos }: { userId: string; photo
     if (!file) return;
     setBusy(true);
     setError(null);
-    const supabase = createClient();
-    const id = crypto.randomUUID();
-    const path = photoPath(userId, id);
     try {
       const blob = await toJpeg(file);
-      const upload = await supabase.storage.from(PHOTO_BUCKET).upload(path, blob, { contentType: "image/jpeg" });
-      if (upload.error) throw new Error(upload.error.message);
-      const { error: insertError } = await supabase.from("progress_photos").insert({
-        id, user_id: userId, taken_on: date, pose, note: note.trim() || null, path, size_bytes: blob.size,
+      const { id, uploadUrl } = await clientApi<{ id: string; path: string; uploadUrl: string }>("/photos/upload-url", {
+        method: "POST",
+        body: { sizeBytes: blob.size },
       });
-      if (insertError) {
-        await supabase.storage.from(PHOTO_BUCKET).remove([path]);
-        throw new Error(insertError.message);
+
+      const putRes = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": "image/jpeg" },
+        body: blob,
+      });
+      if (!putRes.ok) {
+        throw new Error(t("Încărcarea imaginii a eșuat.", "Image upload failed."));
       }
+
+      await clientApi("/photos", {
+        method: "POST",
+        body: {
+          id,
+          takenOn: date,
+          pose,
+          note: note.trim() || null,
+          sizeBytes: blob.size,
+        },
+      });
+
       setFile(null);
       setNote("");
       setAdding(false);
       router.refresh();
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : String(caught);
-      setError(message === "too-large" ? t("Poza este prea mare.", "The photo is too large.")
-        : /row-level security|violates|Photo limit/i.test(message) ? t(`Limita este de ${PHOTO_MAX_PER_USER} de poze.`, `The limit is ${PHOTO_MAX_PER_USER} photos.`)
-        : /bucket not found|schema cache|does not exist/i.test(message) ? t("Rulează migrația progress_photos în Supabase.", "Run the progress_photos migration in Supabase.")
-        : message);
+      setError(
+        message === "too-large"
+          ? t("Poza este prea mare.", "The photo is too large.")
+          : /Photo limit|200/i.test(message)
+            ? t(`Limita este de ${PHOTO_MAX_PER_USER} de poze.`, `The limit is ${PHOTO_MAX_PER_USER} photos.`)
+            : message,
+      );
     } finally {
       setBusy(false);
     }
@@ -98,17 +113,16 @@ export default function PhotoGallery({ userId, photos }: { userId: string; photo
   async function remove(photo: GalleryPhoto) {
     if (!window.confirm(t("Ștergi poza? Nu se poate anula (o copie din backup-ul Drive rămâne până ștergi contul sau datele).", "Delete this photo? This cannot be undone (a copy in the Drive backup stays until you delete your account or data)."))) return;
     setBusy(true);
-    const supabase = createClient();
-    // Row first: a photo whose file removal fails stays invisible but is still deleted with the account.
-    const { error: rowError } = await supabase.from("progress_photos").delete().eq("id", photo.id);
-    if (rowError) setError(rowError.message);
-    else {
-      await supabase.storage.from(PHOTO_BUCKET).remove([photo.path]);
+    try {
+      await clientApi(`/photos/${encodeURIComponent(photo.id)}`, { method: "DELETE" });
       setViewing(null);
       setPicked((current) => current.filter((id) => id !== photo.id));
       router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("Ștergerea a eșuat.", "Delete failed."));
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   }
 
   function select(photo: GalleryPhoto) {

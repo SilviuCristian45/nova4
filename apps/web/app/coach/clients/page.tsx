@@ -3,25 +3,33 @@ import { ChevronRight, Users, Utensils } from "lucide-react";
 import { Text } from "@/app/components/language-provider";
 import { getLanguage } from "@/app/language";
 import { requireCoach } from "@/lib/coach/auth";
-import { DEFAULT_ADHERENCE_DAYS, classifyClientAdherence } from "@/lib/coach/analytics";
+import { serverApi } from "@/lib/api/server";
+import type { ClientAdherence } from "@/lib/coach/analytics";
 import { enrollmentStatusLabel } from "@/lib/coach/programs";
-import { localDate } from "@/lib/daily-metrics";
 import type { EnrollmentStatus } from "@/lib/coach/types";
 import { Badge, Card, Columns, Empty, Screen } from "@/app/components/ui";
 import { PendingRequestsCard, type PendingRequestItem } from "../pending-requests-card";
 
 export const dynamic = "force-dynamic";
 
-type EnrollmentRow = {
-  id: string;
-  client_id: string;
-  program_id: string | null;
+interface ApiCoachClient {
+  enrollmentId: string;
+  clientId: string;
+  clientName: string | null;
+  programId: string | null;
+  programTitle: string | null;
   status: EnrollmentStatus;
-  share_nutrition: boolean;
-  current_week: number;
-  started_at: string | null;
-  created_at: string;
-};
+  shareNutrition: boolean;
+  currentWeek: number;
+  startedAt: string | null;
+  createdAt: string;
+  adherence: ClientAdherence;
+}
+
+interface ApiCoachProgram {
+  id: string;
+  title: string;
+}
 
 const statusTone: Record<EnrollmentStatus, "lime" | "gold" | "red" | undefined> = {
   active: "lime",
@@ -37,7 +45,7 @@ export default async function CoachClientsPage({
   searchParams: Promise<{ status?: string; program?: string }>;
 }) {
   const { t } = await getLanguage();
-  const coach = await requireCoach();
+  await requireCoach();
   const { status: rawStatus, program: programFilter } = await searchParams;
 
   const statusFilter =
@@ -45,78 +53,30 @@ export default async function CoachClientsPage({
       ? rawStatus
       : "all";
 
-  let query = coach.supabase
-    .from("enrollments")
-    .select("id, client_id, program_id, status, share_nutrition, current_week, started_at, created_at")
-    .eq("coach_id", coach.userId)
-    .neq("status", "rejected")
-    .order("created_at", { ascending: false });
-
-  if (statusFilter !== "all") query = query.eq("status", statusFilter);
-  if (programFilter) query = query.eq("program_id", programFilter);
-
-  const [{ data: enrollmentsData }, { data: programsData }, { data: pendingNotifs }] = await Promise.all([
-    query,
-    coach.supabase
-      .from("programs")
-      .select("id, title")
-      .eq("coach_id", coach.userId)
-      .order("title", { ascending: true }),
-    coach.supabase
-      .from("notifications")
-      .select("payload")
-      .eq("user_id", coach.userId)
-      .eq("type", "enroll_requested")
-      .order("created_at", { ascending: false })
-      .limit(100),
+  const [allClients, allPrograms] = await Promise.all([
+    serverApi<ApiCoachClient[]>("/coach/clients").catch(() => []),
+    serverApi<ApiCoachProgram[]>("/coach/programs").catch(() => []),
   ]);
 
-  const enrollments = (enrollmentsData ?? []) as EnrollmentRow[];
-  const programs = (programsData ?? []) as { id: string; title: string }[];
-  const programMap = new Map(programs.map((p) => [p.id, p.title]));
+  const programs = [...allPrograms].sort((a, b) => a.title.localeCompare(b.title));
+  const enrollments = allClients.filter((e) => {
+    if (e.status === "rejected") return false;
+    if (statusFilter !== "all" && e.status !== statusFilter) return false;
+    if (programFilter && e.programId !== programFilter) return false;
+    return true;
+  });
 
-  const clientNames = new Map<string, string>();
-  for (const notif of pendingNotifs ?? []) {
-    const payload = notif.payload as Record<string, unknown> | null;
-    const cid = typeof payload?.client_id === "string" ? payload.client_id : null;
-    const cname = typeof payload?.client_name === "string" ? payload.client_name.trim() : "";
-    if (cid && cname && !clientNames.has(cid)) clientNames.set(cid, cname);
-  }
-
-  const activeClientIds = [...new Set(enrollments.filter((e) => e.status === "active").map((e) => e.client_id))];
-  const lastWorkoutByClient = new Map<string, string>();
-
-  if (activeClientIds.length > 0) {
-    const [{ data: profilesData }, { data: latestDatesData }] = await Promise.all([
-      coach.supabase.from("profiles").select("id, display_name").in("id", activeClientIds),
-      coach.supabase
-        .from("workouts")
-        .select("user_id, performed_on")
-        .in("user_id", activeClientIds)
-        .order("performed_on", { ascending: false })
-        .limit(1000),
-    ]);
-    for (const p of profilesData ?? []) {
-      const display = (p.display_name as string | null)?.trim();
-      if (display) clientNames.set(p.id as string, display);
-    }
-    for (const row of latestDatesData ?? []) {
-      const cid = row.user_id as string;
-      if (!lastWorkoutByClient.has(cid)) lastWorkoutByClient.set(cid, row.performed_on as string);
-    }
-  }
-
-  const labelClient = (id: string) => clientNames.get(id) ?? `${t("Client", "Client")} #${id.slice(0, 6)}`;
-  const today = localDate();
+  const labelClient = (id: string, name: string | null) =>
+    name?.trim() || `${t("Client", "Client")} #${id.slice(0, 6)}`;
 
   const pendingItems: PendingRequestItem[] = enrollments
     .filter((e) => e.status === "pending")
     .map((e) => ({
-      id: e.id,
-      clientId: e.client_id,
-      clientName: labelClient(e.client_id),
-      programTitle: (e.program_id && programMap.get(e.program_id)) || t("Program", "Program"),
-      createdAt: e.created_at,
+      id: e.enrollmentId,
+      clientId: e.clientId,
+      clientName: labelClient(e.clientId, e.clientName),
+      programTitle: e.programTitle || t("Program", "Program"),
+      createdAt: e.createdAt,
     }));
 
   const buildHref = (nextStatus: string, nextProgram?: string) => {
@@ -129,7 +89,6 @@ export default async function CoachClientsPage({
 
   return (
     <Screen back="/coach" title={<Text ro="Clienți" en="Clients" />}>
-      {/* Status filter pills */}
       <div className="flex flex-wrap gap-2">
         {(["all", "active", "pending", "paused", "completed"] as const).map((item) => {
           const active = statusFilter === item;
@@ -147,7 +106,6 @@ export default async function CoachClientsPage({
         })}
       </div>
 
-      {/* Program filter pills */}
       {programs.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           <Link
@@ -184,26 +142,16 @@ export default async function CoachClientsPage({
       ) : (
         <Columns>
           {enrollments.map((e) => {
-            const progTitle = (e.program_id && programMap.get(e.program_id)) || t("Fără program", "No program");
-            const adherence =
-              e.status === "active"
-                ? classifyClientAdherence(
-                    {
-                      lastWorkoutDate: lastWorkoutByClient.get(e.client_id) ?? null,
-                      enrollmentStartedAt: e.started_at ?? e.created_at,
-                    },
-                    today,
-                    DEFAULT_ADHERENCE_DAYS,
-                  )
-                : null;
+            const progTitle = e.programTitle || t("Fără program", "No program");
+            const adherence = e.status === "active" ? e.adherence : null;
 
             return (
-              <Card key={e.id}>
+              <Card key={e.enrollmentId}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <h2 className="truncate text-lg font-semibold">{labelClient(e.client_id)}</h2>
+                    <h2 className="truncate text-lg font-semibold">{labelClient(e.clientId, e.clientName)}</h2>
                     <p className="truncate text-xs text-muted">
-                      {progTitle} · {t("Săpt.", "Wk")} {e.current_week}
+                      {progTitle} · {t("Săpt.", "Wk")} {e.currentWeek}
                     </p>
                   </div>
                   <Badge tone={statusTone[e.status]}>{enrollmentStatusLabel(e.status, t)}</Badge>
@@ -233,15 +181,15 @@ export default async function CoachClientsPage({
                     </Badge>
                   )}
                   {e.status === "active" && (
-                    <Badge tone={e.share_nutrition ? "ice" : undefined} className="gap-1">
+                    <Badge tone={e.shareNutrition ? "ice" : undefined} className="gap-1">
                       <Utensils className="size-3" />
-                      {e.share_nutrition ? t("Nutriție partajată", "Nutrition shared") : t("Nutriție privată", "Nutrition private")}
+                      {e.shareNutrition ? t("Nutriție partajată", "Nutrition shared") : t("Nutriție privată", "Nutrition private")}
                     </Badge>
                   )}
                 </div>
 
                 <Link
-                  href={`/coach/clients/${e.client_id}`}
+                  href={`/coach/clients/${e.clientId}`}
                   className="inline-flex items-center justify-between rounded-md bg-inner px-3.5 py-2.5 text-sm font-semibold text-foreground transition-colors active:bg-control"
                 >
                   <span><Text ro="Deschide profil client" en="Open client profile" /></span>

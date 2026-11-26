@@ -170,6 +170,34 @@ export default function InsertMealPage() {
     }
   }, [draftItems, mealType])
 
+  function mapApiFood(f: {
+    id?: string
+    name: string
+    brand?: string | null
+    barcode?: string | null
+    kcalPer100g?: number
+    proteinPer100g?: number
+    carbsPer100g?: number
+    fatPer100g?: number
+    fiberPer100g?: number
+    source?: string
+    imageUrl?: string | null
+  }) {
+    return {
+      id: f.id,
+      name: f.name,
+      brand: f.brand ?? "",
+      barcode: f.barcode ?? null,
+      kcal_per_100g: f.kcalPer100g ?? 0,
+      protein_per_100g: f.proteinPer100g ?? 0,
+      carbs_per_100g: f.carbsPer100g ?? 0,
+      fat_per_100g: f.fatPer100g ?? 0,
+      fiber_per_100g: f.fiberPer100g ?? 0,
+      source: f.source,
+      image_url: f.imageUrl ?? null,
+    }
+  }
+
   // Căutare Text
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault()
@@ -178,9 +206,11 @@ export default function InsertMealPage() {
     setSelectedFood(null)
     
     try {
-      const res = await fetch(`/api/food/search?q=${encodeURIComponent(query)}`)
-      const data = await res.json()
-      if (data.results) setResults(data.results)
+      const res = await fetch(`/api/v1/foods/search?q=${encodeURIComponent(query)}`, { credentials: "same-origin" })
+      if (res.ok) {
+        const data = await res.json()
+        if (Array.isArray(data.results)) setResults(data.results.map(mapApiFood))
+      }
     } catch (err) {
       console.error(err)
     } finally {
@@ -196,11 +226,11 @@ export default function InsertMealPage() {
     setQuery(scannedCode)
 
     try {
-      const res = await fetch(`/api/food/barcode/${scannedCode}`)
-      const data = await res.json()
-      if (data.data) {
-        setSelectedFood(data.data)
-        setResults([]) 
+      const res = await fetch(`/api/v1/foods/barcode/${encodeURIComponent(scannedCode)}`, { credentials: "same-origin" })
+      if (res.ok) {
+        const data = await res.json()
+        setSelectedFood(mapApiFood(data))
+        setResults([])
       } else {
         alert(t("Produsul nu a fost găsit.", "Product not found."))
       }

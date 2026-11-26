@@ -3,22 +3,34 @@ import { ClipboardList, Plus, Users } from "lucide-react";
 import { Text } from "@/app/components/language-provider";
 import { getLanguage } from "@/app/language";
 import { requireCoach } from "@/lib/coach/auth";
+import { serverApi } from "@/lib/api/server";
 import {
   accessTypeLabel,
   difficultyLabel,
   goalLabel,
   programStatusLabel,
 } from "@/lib/coach/programs";
-import type { Program, ProgramStatus } from "@/lib/coach/types";
+import type { ProgramAccessType, ProgramDifficulty, ProgramGoal, ProgramStatus } from "@/lib/coach/types";
 import { Badge, Card, Columns, Empty, Screen, buttonClass } from "@/app/components/ui";
 import { CopyInviteButton } from "./copy-invite-button";
 
 export const dynamic = "force-dynamic";
 
-type ProgramListRow = Program & {
-  program_workouts: { id: string }[] | null;
-  enrollments: { id: string; status: string }[] | null;
-};
+interface ApiCoachProgram {
+  id: string;
+  assignedClientId: string | null;
+  title: string;
+  description: string | null;
+  difficulty: ProgramDifficulty;
+  durationWeeks: number;
+  goal: ProgramGoal;
+  status: ProgramStatus;
+  accessType: ProgramAccessType;
+  inviteCode: string | null;
+  workoutCount?: number;
+  activeEnrollmentsCount?: number;
+  pendingEnrollmentsCount?: number;
+}
 
 const statusTone: Record<ProgramStatus, "lime" | "gold" | undefined> = {
   published: "lime",
@@ -32,23 +44,19 @@ export default async function CoachProgramsPage({
   searchParams: Promise<{ status?: string }>;
 }) {
   const { t } = await getLanguage();
-  const coach = await requireCoach();
+  await requireCoach();
   const { status: rawFilter } = await searchParams;
   const filter = rawFilter === "draft" || rawFilter === "published" || rawFilter === "archived" ? rawFilter : "all";
 
-  let query = coach.supabase
-    .from("programs")
-    .select("*, program_workouts(id), enrollments(id, status)")
-    .eq("coach_id", coach.userId)
-    .order("updated_at", { ascending: false });
-
-  if (filter !== "all") {
-    query = query.eq("status", filter);
+  let allPrograms: ApiCoachProgram[] = [];
+  let loadError: string | null = null;
+  try {
+    allPrograms = await serverApi<ApiCoachProgram[]>("/coach/programs");
+  } catch (err) {
+    loadError = err instanceof Error ? err.message : t("Eroare la încărcare.", "Failed to load.");
   }
 
-  const { data, error } = await query;
-  const programs = (data ?? []) as ProgramListRow[];
-
+  const programs = filter === "all" ? allPrograms : allPrograms.filter((p) => p.status === filter);
   const filterHref = (next: string) => (next === "all" ? "/coach/programs" : `/coach/programs?status=${next}`);
 
   return (
@@ -79,9 +87,9 @@ export default async function CoachProgramsPage({
         })}
       </div>
 
-      {error ? (
+      {loadError ? (
         <Card tone="red">
-          <p className="text-sm font-semibold">{error.message}</p>
+          <p className="text-sm font-semibold">{loadError}</p>
         </Card>
       ) : programs.length === 0 ? (
         <Empty icon={ClipboardList}>
@@ -90,9 +98,9 @@ export default async function CoachProgramsPage({
       ) : (
         <Columns>
           {programs.map((program) => {
-            const workoutCount = program.program_workouts?.length ?? 0;
-            const activeCount = (program.enrollments ?? []).filter((e) => e.status === "active").length;
-            const pendingCount = (program.enrollments ?? []).filter((e) => e.status === "pending").length;
+            const workoutCount = program.workoutCount ?? 0;
+            const activeCount = program.activeEnrollmentsCount ?? 0;
+            const pendingCount = program.pendingEnrollmentsCount ?? 0;
 
             return (
               <Card key={program.id}>
@@ -111,12 +119,12 @@ export default async function CoachProgramsPage({
                 <div className="flex flex-wrap gap-1.5">
                   <Badge tone="ice">{goalLabel(program.goal, t)}</Badge>
                   <Badge>{difficultyLabel(program.difficulty, t)}</Badge>
-                  <Badge>{program.duration_weeks} {t("săpt.", "wk")}</Badge>
+                  <Badge>{program.durationWeeks} {t("săpt.", "wk")}</Badge>
                   <Badge>{workoutCount} {t("zile", "days")}</Badge>
-                  <Badge tone={program.access_type === "invite_only" ? "lilac" : undefined}>
-                    {accessTypeLabel(program.access_type, t)}
+                  <Badge tone={program.accessType === "invite_only" ? "lilac" : undefined}>
+                    {accessTypeLabel(program.accessType, t)}
                   </Badge>
-                  {program.assigned_client_id && (
+                  {program.assignedClientId && (
                     <Badge tone="gold"><Text ro="Personalizat client" en="Client custom" /></Badge>
                   )}
                 </div>
@@ -127,8 +135,8 @@ export default async function CoachProgramsPage({
                     {activeCount} {t("activi", "active")}
                     {pendingCount > 0 && ` · ${pendingCount} ${t("în așteptare", "pending")}`}
                   </span>
-                  {program.invite_code && (
-                    <span className="font-mono font-bold text-foreground">{program.invite_code}</span>
+                  {program.inviteCode && (
+                    <span className="font-mono font-bold text-foreground">{program.inviteCode}</span>
                   )}
                 </div>
 
@@ -139,7 +147,7 @@ export default async function CoachProgramsPage({
                   >
                     <Text ro="Editează" en="Edit" />
                   </Link>
-                  {program.invite_code && <CopyInviteButton code={program.invite_code} />}
+                  {program.inviteCode && <CopyInviteButton code={program.inviteCode} />}
                 </div>
               </Card>
             );

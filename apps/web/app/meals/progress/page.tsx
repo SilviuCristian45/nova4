@@ -5,7 +5,7 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react"
 import { Card, Columns, IconButton, Label, ProgressBar, Screen, TextLink, type Tone } from "@/app/components/ui"
-import { createClient } from "@/utils/supabase/client"
+import { clientApi } from "@/lib/api/client"
 import { getUserTargets } from "@/app/meals/action"
 
 export default function ProgressDashboardPage() {
@@ -22,57 +22,53 @@ export default function ProgressDashboardPage() {
   useEffect(() => {
     async function fetchDashboardData() {
       setIsLoading(true)
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
 
-      // Tragem paralalel atât Mesele de azi, cât și Targeturile Userului
-      const [mealsRes, targetsRes] = await Promise.all([
-        supabase
-          .from("meals")
-          .select(`
-            meal_items (
-              consumed_weight_g,
-              total_kcal,
-              total_protein_g,
-              total_carbs_g,
-              total_fat_g,
-              foods ( fiber_per_100g )
-            )
-          `)
-          .eq("user_id", user.id)
-          .eq("performed_on", dateString),
-        getUserTargets()
-      ])
+      type ApiMeal = {
+        items: {
+          consumedWeightG: number
+          totalKcal: number
+          totalProteinG: number
+          totalCarbsG: number
+          totalFatG: number
+          food: { fiberPer100g: number } | null
+        }[]
+      }
 
-      // Actualizăm Targeturile
-      if (targetsRes.targets) setGoals(targetsRes.targets)
+      try {
+        const [meals, targetsRes] = await Promise.all([
+          clientApi<ApiMeal[]>(`/meals?date=${encodeURIComponent(dateString)}`),
+          getUserTargets()
+        ])
 
-      // Calculăm ce a mâncat azi (inclusiv fibre calculate pe gramaj)
-      let dayKcal = 0, dayP = 0, dayC = 0, dayF = 0, dayFiber = 0
+        if (targetsRes.targets) setGoals(targetsRes.targets)
 
-      mealsRes.data?.forEach(meal => {
-        meal.meal_items.forEach((item: any) => {
-          dayKcal += item.total_kcal || 0
-          dayP += item.total_protein_g || 0
-          dayC += item.total_carbs_g || 0
-          dayF += item.total_fat_g || 0
-          
-          if (item.foods?.fiber_per_100g) {
-            dayFiber += (item.foods.fiber_per_100g / 100) * item.consumed_weight_g
-          }
+        let dayKcal = 0, dayP = 0, dayC = 0, dayF = 0, dayFiber = 0
+
+        meals.forEach((meal) => {
+          meal.items.forEach((item) => {
+            dayKcal += item.totalKcal || 0
+            dayP += item.totalProteinG || 0
+            dayC += item.totalCarbsG || 0
+            dayF += item.totalFatG || 0
+
+            if (item.food?.fiberPer100g) {
+              dayFiber += (item.food.fiberPer100g / 100) * item.consumedWeightG
+            }
+          })
         })
-      })
 
-      setTotals({
-        kcal: Math.round(dayKcal),
-        p: Math.round(dayP * 10) / 10,
-        c: Math.round(dayC * 10) / 10,
-        f: Math.round(dayF * 10) / 10,
-        fiber: Math.round(dayFiber * 10) / 10
-      })
-      
-      setIsLoading(false)
+        setTotals({
+          kcal: Math.round(dayKcal),
+          p: Math.round(dayP * 10) / 10,
+          c: Math.round(dayC * 10) / 10,
+          f: Math.round(dayF * 10) / 10,
+          fiber: Math.round(dayFiber * 10) / 10
+        })
+      } catch (err) {
+        console.error(err)
+      } finally {
+        setIsLoading(false)
+      }
     }
 
     fetchDashboardData()

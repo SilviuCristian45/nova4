@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { LogOut } from "lucide-react";
-import { createClient } from "@/utils/supabase/client";
+import { clientApiFetch } from "@/lib/api/client";
 import { lockOfflineAccount } from "@/lib/offline/store";
 import { useLanguage } from "./language-provider";
 import { iconButtonClass } from "./ui";
@@ -16,11 +16,11 @@ export function SignOutButton() {
     setError(null);
     try {
       await lockOfflineAccount();
-      const { error } = await createClient().auth.signOut();
-      if (error) throw error;
+      const res = await clientApiFetch("/auth/logout", { method: "POST", body: {}, skipAuthRefresh: true });
+      if (!res.ok) throw new Error(t("Deconectarea a eșuat.", "Sign out failed."));
       window.location.assign("/login");
-    } catch (error) {
-      setError(error instanceof Error ? error.message : t("Deconectarea a eșuat.", "Sign out failed."));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("Deconectarea a eșuat.", "Sign out failed."));
       setPending(false);
     }
   }

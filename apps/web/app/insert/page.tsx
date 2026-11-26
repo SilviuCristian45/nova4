@@ -21,7 +21,7 @@ import {
   Pause,
   Square,
 } from "lucide-react";
-import { createClient } from "@/utils/supabase/client";
+import { clientApi } from "@/lib/api/client";
 import confetti from "canvas-confetti";
 
 import { saveWorkout } from "./action";
@@ -55,8 +55,8 @@ import { displayOrdinals, positionSetNumbers } from "@/lib/set-numbering";
 import { workoutSplit } from "@/lib/workout-save";
 import { ExerciseCombobox } from "@/app/components/exercise-combobox";
 import { localizeOfflineMessage } from "@/lib/offline/messages";
-import { fetchPlateauSets, fetchRecentSets, fetchRecordBaseline } from "@/lib/exercise-history";
-import { detectPlateau, type PlateauStatus } from "@/lib/plateau";
+import { fetchExerciseHistory, fetchRecordBaseline } from "@/lib/exercise-history";
+import { type PlateauStatus } from "@/lib/plateau";
 import { estimateOneRepMax } from "@/lib/personal-record";
 import {
   cardioName,
@@ -226,35 +226,17 @@ function InsertWorkoutContent() {
     if (initializedPlanId.current === programWorkoutIdParam) return;
     let cancelled = false;
     async function loadAssigned() {
-      const supabase = createClient();
-      const { data, error: loadError } = await supabase
-        .from("program_workouts")
-        .select("id, week_number, day_number, title, workout_mode, split, notes, programs(title), program_workout_exercises(*), program_workout_cardio(*)")
-        .eq("id", programWorkoutIdParam)
-        .maybeSingle();
+      let plan: AssignedWorkoutPlan | null = null;
+      try {
+        plan = await clientApi<AssignedWorkoutPlan>(
+          `/explore/program-workouts/${encodeURIComponent(programWorkoutIdParam!)}`,
+        );
+      } catch {
+        plan = null;
+      }
 
-      if (cancelled || loadError || !data) return;
+      if (cancelled || !plan) return;
       initializedPlanId.current = programWorkoutIdParam;
-      const progRel = data.programs as { title?: string } | { title?: string }[] | null;
-      const programTitle = Array.isArray(progRel) ? (progRel[0]?.title ?? "") : (progRel?.title ?? "");
-      const exercises = ([...(data.program_workout_exercises ?? [])] as ProgramWorkoutExercise[]).sort(
-        (a, b) => a.position - b.position,
-      );
-      const cardio = ([...(data.program_workout_cardio ?? [])] as ProgramWorkoutCardio[]).sort(
-        (a, b) => a.position - b.position,
-      );
-      const plan: AssignedWorkoutPlan = {
-        id: data.id as string,
-        programTitle,
-        title: data.title as string,
-        weekNumber: data.week_number as number,
-        dayNumber: data.day_number as number,
-        workoutMode: data.workout_mode === "cardio" ? "cardio" : "strength",
-        split: data.split as string,
-        notes: (data.notes as string | null) ?? null,
-        exercises,
-        cardio,
-      };
       setAssignedPlan(plan);
 
       let hasExistingDraft = false;
@@ -313,45 +295,20 @@ function InsertWorkoutContent() {
           "We recommend you work set lift data",
         ),
       );
-      const supabase = createClient();
-
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
-
-      let data: Awaited<ReturnType<typeof fetchRecentSets>> = [];
+      let bestSet: Awaited<ReturnType<typeof fetchExerciseHistory>>["lastSessionBest"] = null;
       let recordBaseline: BestSet | null = null;
       let error = false;
       try {
-        let plateauSets: Awaited<ReturnType<typeof fetchPlateauSets>> = [];
-        [data, recordBaseline, plateauSets] = await Promise.all([
-          fetchRecentSets(supabase, user.id, exercise),
-          fetchRecordBaseline(supabase, user.id, exercise),
-          fetchPlateauSets(supabase, user.id, exercise),
-        ]);
-        setPlateau(detectPlateau(plateauSets));
+        const history = await fetchExerciseHistory(exercise);
+        bestSet = history.lastSessionBest ?? getBestSetFromLastSession(history.recentSets);
+        recordBaseline = history.bestAllTime ?? null;
+        setPlateau(history.plateau);
       } catch (e) {
         console.error("Exercise history could not be loaded:", e);
         error = true;
       }
 
-      if (error || data.length === 0) {
-        setLastPerformance(
-          t(
-            "Exercițiu nou. Setează primul record!",
-            "New exercise. Set your first record!",
-          ),
-        );
-        requestedBaselines.current.add(exercise);
-        setBaselines((prev) => ({ ...prev, [exercise]: null }));
-        return;
-      }
-
-      // Folosim funcția separată ca să extragem cel mai bun set din ultima sesiune
-      const bestSet = getBestSetFromLastSession(data);
-
-      if (!bestSet) {
+      if (error || !bestSet) {
         setLastPerformance(
           t(
             "Exercițiu nou. Setează primul record!",
@@ -392,13 +349,9 @@ function InsertWorkoutContent() {
     if (missing.length === 0) return;
     missing.forEach((name) => requestedBaselines.current.add(name));
     async function loadMissing() {
-      const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
       const loaded: Record<string, BestSet | null> = {};
       for (const name of missing) {
-        loaded[name] = user ? await fetchRecordBaseline(supabase, user.id, name) : null;
+        loaded[name] = await fetchRecordBaseline(name);
       }
       setBaselines((prev) => ({ ...loaded, ...prev }));
     }

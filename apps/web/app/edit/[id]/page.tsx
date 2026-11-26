@@ -1,29 +1,79 @@
-import { Text } from "@/app/components/language-provider"
-import { redirect } from "next/navigation"
-import { createClient } from "@/lib/supabase/server"
-import EditWorkoutForm from "./edit-form"
-import { Message, Screen } from "@/app/components/ui"
+import { Text } from "@/app/components/language-provider";
+import { redirect } from "next/navigation";
+import { getSessionUser, serverApi } from "@/lib/api/server";
+import EditWorkoutForm from "./edit-form";
+import { Message, Screen } from "@/app/components/ui";
 
-export const dynamic = "force-dynamic"
-export const revalidate = 0
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-// În Next.js 15, params vine ca o promisiune, așa că trebuie să-i dăm await
+interface ApiWorkout {
+  id: string;
+  performedOn: string;
+  split: string;
+  workoutMode: "strength" | "cardio";
+  sets: {
+    id: string;
+    split: string;
+    exercise: string;
+    setNumber: number;
+    reps: number;
+    weight: number;
+    rir: number | null;
+    setType: string;
+    notes: string | null;
+  }[];
+  cardio: {
+    id: string;
+    activity: string;
+    durationMin: number;
+  }[];
+}
+
 export default async function EditWorkoutPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const { id } = await params;
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
 
-  if (!user) redirect("/login")
-
-  const { data: workout, error } = await supabase
-    .from("workouts")
-    .select(`*, workout_sets (*), cardio_sessions (*)`)
-    .eq("id", id)
-    .single()
-
-  if (error || !workout) {
-    return <Screen back="/history"><Message><Text ro="Antrenamentul nu a fost găsit." en="Workout not found." /></Message></Screen>
+  let workout: ApiWorkout | null = null;
+  try {
+    workout = await serverApi<ApiWorkout>(`/workouts/${encodeURIComponent(id)}`);
+  } catch {
+    workout = null;
   }
 
-  return <EditWorkoutForm initialWorkout={workout} />
+  if (!workout) {
+    return (
+      <Screen back="/history">
+        <Message>
+          <Text ro="Antrenamentul nu a fost găsit." en="Workout not found." />
+        </Message>
+      </Screen>
+    );
+  }
+
+  const mappedWorkout = {
+    id: workout.id,
+    performed_on: workout.performedOn,
+    split: workout.split,
+    workout_mode: workout.workoutMode,
+    workout_sets: workout.sets.map((s) => ({
+      id: s.id,
+      split: s.split,
+      exercise: s.exercise,
+      set_number: s.setNumber,
+      reps: s.reps,
+      weight: s.weight,
+      rir: s.rir,
+      set_type: s.setType,
+      notes: s.notes,
+    })),
+    cardio_sessions: workout.cardio.map((c) => ({
+      id: c.id,
+      activity: c.activity,
+      duration_min: c.durationMin,
+    })),
+  };
+
+  return <EditWorkoutForm initialWorkout={mappedWorkout} />;
 }

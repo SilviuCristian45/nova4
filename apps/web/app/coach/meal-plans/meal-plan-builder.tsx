@@ -201,14 +201,35 @@ function FoodAdderPanel({
     setSearchError(null);
     setPicked(null);
     try {
-      const res = await fetch(`/api/food/search?q=${encodeURIComponent(query.trim())}`);
+      const res = await fetch(`/api/v1/foods/search?q=${encodeURIComponent(query.trim())}`, {
+        credentials: "same-origin",
+      });
       const data = await res.json();
       if (!res.ok) {
-        setSearchError(data.error || t("Eroare la căutare.", "Search failed."));
+        setSearchError(data.message || data.error || t("Eroare la căutare.", "Search failed."));
         return;
       }
-      setResults((data.results ?? []) as SearchFoodResult[]);
-      if ((data.results ?? []).length === 0) {
+      const mapped = ((data.results ?? []) as {
+        id?: string;
+        name: string;
+        brand?: string | null;
+        kcalPer100g?: number;
+        proteinPer100g?: number;
+        carbsPer100g?: number;
+        fatPer100g?: number;
+        fiberPer100g?: number | null;
+      }[]).map((f) => ({
+        id: f.id,
+        name: f.name,
+        brand: f.brand ?? null,
+        kcal_per_100g: f.kcalPer100g ?? 0,
+        protein_per_100g: f.proteinPer100g ?? 0,
+        carbs_per_100g: f.carbsPer100g ?? 0,
+        fat_per_100g: f.fatPer100g ?? 0,
+        fiber_per_100g: f.fiberPer100g ?? null,
+      }));
+      setResults(mapped as SearchFoodResult[]);
+      if (mapped.length === 0) {
         setSearchError(
           t(
             "Niciun rezultat găsit. Poți adăuga alimentul manual.",

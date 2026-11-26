@@ -23,13 +23,13 @@ import {
   Select,
   Textarea,
 } from "@/app/components/ui";
-import { CHECKIN_PHOTO_BUCKET, checkinPhotoPath, hasAnyCheckinPhoto } from "@/lib/checkin-photos";
+import { hasAnyCheckinPhoto } from "@/lib/checkin-photos";
 import {
   CHECKIN_PHOTO_SLOTS,
   type CheckinPhotoSlot,
   type WeeklyCheckinWithPhotos,
 } from "@/lib/coach/types";
-import { createClient } from "@/utils/supabase/client";
+import { clientApi } from "@/lib/api/client";
 import { submitWeeklyCheckinAction } from "./actions";
 
 export type ActiveCoachOption = {
@@ -226,8 +226,6 @@ export function WeeklyCheckinClient({
       return;
     }
 
-    const supabase = createClient();
-    const newlyUploadedPaths: string[] = [];
     const nextPaths: Record<CheckinPhotoSlot, string | null> = {
       front: photoDrafts.front.path,
       back: photoDrafts.back.path,
@@ -239,12 +237,19 @@ export function WeeklyCheckinClient({
         const picked = photoDrafts[slot].file;
         if (!picked) continue;
         const blob = await resizeCheckinPhotoToJpeg(picked);
-        const path = checkinPhotoPath(userId, crypto.randomUUID());
-        const upload = await supabase.storage
-          .from(CHECKIN_PHOTO_BUCKET)
-          .upload(path, blob, { contentType: "image/jpeg" });
-        if (upload.error) throw new Error(upload.error.message);
-        newlyUploadedPaths.push(path);
+        const { path, uploadUrl } = await clientApi<{ path: string; uploadUrl: string }>(
+          "/checkins/weekly/photo-upload-url",
+          {
+            method: "POST",
+            body: { sizeBytes: blob.size },
+          },
+        );
+        const putRes = await fetch(uploadUrl, {
+          method: "PUT",
+          headers: { "Content-Type": "image/jpeg" },
+          body: blob,
+        });
+        if (!putRes.ok) throw new Error(t("Încărcarea imaginii a eșuat.", "Image upload failed."));
         nextPaths[slot] = path;
       }
 
@@ -263,14 +268,10 @@ export function WeeklyCheckinClient({
       });
 
       if (res.error) {
-        if (newlyUploadedPaths.length > 0) {
-          await supabase.storage.from(CHECKIN_PHOTO_BUCKET).remove(newlyUploadedPaths);
-        }
         setError(res.error);
         return;
       }
 
-      // Keep local previewUrl until the next coach switch/navigation so there is no flicker while router.refresh() fetches new signed URLs.
       setPhotoDrafts((prev) => ({
         front: { path: nextPaths.front, file: null, previewUrl: prev.front.previewUrl },
         back: { path: nextPaths.back, file: null, previewUrl: prev.back.previewUrl },
@@ -279,21 +280,13 @@ export function WeeklyCheckinClient({
       setSuccess(res.message ?? t("Salvat.", "Saved."));
       router.refresh();
     } catch (caught) {
-      if (newlyUploadedPaths.length > 0) {
-        await supabase.storage.from(CHECKIN_PHOTO_BUCKET).remove(newlyUploadedPaths);
-      }
       const message = caught instanceof Error ? caught.message : String(caught);
       setError(
         message === "too-large"
           ? t("Una dintre poze este prea mare (maxim 5 MB).", "One of the photos is too large (max 5 MB).")
           : message === "invalid-image"
             ? t("Imagine invalidă sau format nesuportat.", "Invalid image or unsupported format.")
-            : /bucket not found|schema cache|does not exist/i.test(message)
-              ? t(
-                  "Rulează migrația 202611240003_weekly_checkin_photos.sql în Supabase.",
-                  "Run the 202611240003_weekly_checkin_photos.sql migration in Supabase.",
-                )
-              : message,
+            : message,
       );
     } finally {
       setSubmitting(false);

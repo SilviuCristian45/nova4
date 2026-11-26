@@ -176,6 +176,12 @@ export class ExploreController {
     return this.coachService.listPublicPrograms();
   }
 
+  @Get("coaches")
+  @ApiOperation({ summary: "Browse public coach profiles" })
+  listPublicCoaches() {
+    return this.coachService.listPublicCoaches();
+  }
+
   @Get("invite/:code")
   @ApiOperation({ summary: "Preview a published program by invite code" })
   previewInvite(@Param("code") code: string) {
@@ -192,6 +198,18 @@ export class ExploreController {
   @ApiOperation({ summary: "List current user's enrollments as a client" })
   listEnrollments(@CurrentUser() user: AuthenticatedUser) {
     return this.coachService.listClientEnrollments(user.userId);
+  }
+
+  @Get("active-program")
+  @ApiOperation({ summary: "Get active program workout summary for the current client dashboard" })
+  activeProgram(@CurrentUser() user: AuthenticatedUser) {
+    return this.coachService.getActiveProgramSummary(user.userId);
+  }
+
+  @Get("program-workouts/:id")
+  @ApiOperation({ summary: "Get an assigned program workout's exercises and cardio targets" })
+  getProgramWorkout(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+    return this.coachService.getProgramWorkoutForClient(user.userId, id);
   }
 
   @Delete("enrollments/:id")

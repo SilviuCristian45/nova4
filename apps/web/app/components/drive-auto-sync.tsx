@@ -18,7 +18,7 @@ export function DriveAutoSync() {
     } catch {
       return;
     }
-    void fetch("/api/drive/sync", { method: "POST", redirect: "manual" }).catch(() => undefined);
+    void fetch("/api/v1/drive/sync", { method: "POST", credentials: "same-origin", redirect: "manual" }).catch(() => undefined);
   }, [pathname]);
   return null;
 }

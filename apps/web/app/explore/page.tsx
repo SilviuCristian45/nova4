@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { Text } from "@/app/components/language-provider";
 import { getLanguage } from "@/app/language";
-import { createClient } from "@/lib/supabase/server";
+import { getSessionUser, serverApi } from "@/lib/api/server";
 import {
   isValidInviteCode,
   normalizeInviteCode,
@@ -11,32 +11,59 @@ import {
   type ProgramGoal,
   type ProgramInvitePreview,
 } from "@/lib/coach/types";
-import { pickNextProgramWorkout } from "@/lib/coach/programs";
 import { Screen } from "@/app/components/ui";
 import { ExploreClient, type MyEnrollmentCard, type PublicProgramCard } from "./explore-client";
 
 export const dynamic = "force-dynamic";
 
-type PublicProgramRow = {
+interface ApiPublicProgram {
   id: string;
-  coach_id: string;
+  coachId: string;
+  coachName: string;
   title: string;
   description: string | null;
   difficulty: ProgramDifficulty;
-  duration_weeks: number;
+  durationWeeks: number;
   goal: ProgramGoal;
-  requires_approval: boolean;
-  program_workouts: { id: string }[] | null;
-};
+  requiresApproval: boolean;
+  workoutCount?: number;
+  workouts?: { id: string }[];
+}
 
-type MyEnrollmentRow = {
+interface ApiPublicCoach {
+  userId: string;
+  displayName: string;
+  bio: string | null;
+  specialties: string[];
+  isPublic: boolean;
+  acceptingClients: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface ApiMyEnrollment {
   id: string;
-  program_id: string | null;
-  coach_id: string;
+  coachId: string;
+  coachName: string | null;
+  programId: string | null;
+  programTitle: string | null;
   status: EnrollmentStatus;
-  share_nutrition: boolean;
-  current_week: number;
-};
+  shareNutrition: boolean;
+  currentWeek: number;
+  nextWorkoutId?: string | null;
+}
+
+interface ApiInvitePreview {
+  id: string;
+  coachId: string;
+  coachName: string;
+  title: string;
+  description: string | null;
+  difficulty: ProgramDifficulty;
+  durationWeeks: number;
+  goal: ProgramGoal;
+  requiresApproval: boolean;
+}
 
 export default async function ExplorePage({
   searchParams,
@@ -44,142 +71,72 @@ export default async function ExplorePage({
   searchParams: Promise<{ code?: string }>;
 }) {
   const { t } = await getLanguage();
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect("/login");
 
   const { code: rawCode } = await searchParams;
   const normalizedCode = rawCode ? normalizeInviteCode(rawCode) : "";
 
-  const [
-    { data: programsData },
-    { data: coachesData },
-    { data: enrollmentsData },
-    inviteLookup,
-  ] = await Promise.all([
-    supabase
-      .from("programs")
-      .select("id, coach_id, title, description, difficulty, duration_weeks, goal, requires_approval, program_workouts(id)")
-      .eq("status", "published")
-      .eq("access_type", "public")
-      .is("assigned_client_id", null)
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("coach_profiles")
-      .select("user_id, display_name, bio, specialties, is_public, accepting_clients, created_at, updated_at")
-      .eq("is_public", true)
-      .order("display_name", { ascending: true }),
-    supabase
-      .from("enrollments")
-      .select("id, program_id, coach_id, status, share_nutrition, current_week")
-      .eq("client_id", user.id)
-      .in("status", ["pending", "active", "paused"])
-      .order("created_at", { ascending: false }),
+  const [rawPrograms, rawCoaches, rawEnrollments, invitePreviewRes] = await Promise.all([
+    serverApi<ApiPublicProgram[]>("/explore/programs").catch(() => []),
+    serverApi<ApiPublicCoach[]>("/explore/coaches").catch(() => []),
+    serverApi<ApiMyEnrollment[]>("/explore/enrollments").catch(() => []),
     normalizedCode && isValidInviteCode(normalizedCode)
-      ? supabase.rpc("preview_program_by_invite", { p_code: normalizedCode })
-      : Promise.resolve({ data: null, error: null }),
+      ? serverApi<ApiInvitePreview>(`/explore/invite/${encodeURIComponent(normalizedCode)}`).catch(() => null)
+      : Promise.resolve(null),
   ]);
 
-  const rawPrograms = (programsData ?? []) as PublicProgramRow[];
-  const publicCoaches = (coachesData ?? []) as CoachProfile[];
-  const rawEnrollments = (enrollmentsData ?? []) as MyEnrollmentRow[];
-
-  // Resolve coach display names for all referenced coaches (public + enrolled).
-  const coachIds = [
-    ...new Set([
-      ...rawPrograms.map((p) => p.coach_id),
-      ...rawEnrollments.map((e) => e.coach_id),
-    ]),
-  ];
-  const coachNameMap = new Map<string, string>(publicCoaches.map((c) => [c.user_id, c.display_name]));
-  const missingCoachIds = coachIds.filter((id) => !coachNameMap.has(id));
-  if (missingCoachIds.length > 0) {
-    const { data: extraCoaches } = await supabase
-      .from("coach_profiles")
-      .select("user_id, display_name")
-      .in("user_id", missingCoachIds);
-    for (const c of extraCoaches ?? []) {
-      coachNameMap.set(c.user_id as string, c.display_name as string);
-    }
-  }
-
-  // Resolve titles and next recommended workouts for user's enrollments.
-  const enrolledProgramIds = [...new Set(rawEnrollments.map((e) => e.program_id).filter((id): id is string => Boolean(id)))];
-  const programTitleMap = new Map<string, string>();
-  const workoutsByProgram = new Map<string, { id: string; week_number: number; day_number: number; position: number }[]>();
-  const completedByEnrollment = new Map<string, Set<string>>();
-
-  if (enrolledProgramIds.length > 0) {
-    const [{ data: enrolledProgs }, { data: pWorkouts }, { data: loggedWorkouts }] = await Promise.all([
-      supabase.from("programs").select("id, title").in("id", enrolledProgramIds),
-      supabase
-        .from("program_workouts")
-        .select("id, program_id, week_number, day_number, position")
-        .in("program_id", enrolledProgramIds),
-      supabase
-        .from("workouts")
-        .select("enrollment_id, program_workout_id")
-        .eq("user_id", user.id)
-        .in("enrollment_id", rawEnrollments.map((e) => e.id))
-        .not("program_workout_id", "is", null),
-    ]);
-
-    for (const p of enrolledProgs ?? []) {
-      programTitleMap.set(p.id as string, p.title as string);
-    }
-    for (const w of pWorkouts ?? []) {
-      const pid = w.program_id as string;
-      const list = workoutsByProgram.get(pid) ?? [];
-      list.push({
-        id: w.id as string,
-        week_number: w.week_number as number,
-        day_number: w.day_number as number,
-        position: w.position as number,
-      });
-      workoutsByProgram.set(pid, list);
-    }
-    for (const lw of loggedWorkouts ?? []) {
-      const eid = lw.enrollment_id as string | null;
-      const pwid = lw.program_workout_id as string | null;
-      if (!eid || !pwid) continue;
-      const set = completedByEnrollment.get(eid) ?? new Set<string>();
-      set.add(pwid);
-      completedByEnrollment.set(eid, set);
-    }
-  }
+  const publicCoaches: CoachProfile[] = rawCoaches.map((c) => ({
+    user_id: c.userId,
+    display_name: c.displayName,
+    bio: c.bio,
+    specialties: c.specialties,
+    is_public: c.isPublic,
+    accepting_clients: c.acceptingClients,
+    created_at: c.createdAt,
+    updated_at: c.updatedAt,
+  }));
 
   const publicPrograms: PublicProgramCard[] = rawPrograms.map((p) => ({
     id: p.id,
-    coach_id: p.coach_id,
-    coach_name: coachNameMap.get(p.coach_id) ?? t("Antrenor", "Coach"),
+    coach_id: p.coachId,
+    coach_name: p.coachName || t("Antrenor", "Coach"),
     title: p.title,
     description: p.description,
     difficulty: p.difficulty,
-    duration_weeks: p.duration_weeks,
+    duration_weeks: p.durationWeeks,
     goal: p.goal,
-    requires_approval: p.requires_approval,
-    workout_count: p.program_workouts?.length ?? 0,
+    requires_approval: p.requiresApproval,
+    workout_count: p.workoutCount ?? p.workouts?.length ?? 0,
   }));
 
-  const myEnrollments: MyEnrollmentCard[] = rawEnrollments.map((e) => {
-    const pWorkouts = e.program_id ? (workoutsByProgram.get(e.program_id) ?? []) : [];
-    const nextWorkout = e.status === "active"
-      ? pickNextProgramWorkout(pWorkouts, completedByEnrollment.get(e.id) ?? new Set(), e.current_week)
-      : null;
-    return {
+  const myEnrollments: MyEnrollmentCard[] = rawEnrollments
+    .filter((e) => e.status === "pending" || e.status === "active" || e.status === "paused")
+    .map((e) => ({
       id: e.id,
-      program_id: e.program_id,
-      program_title: (e.program_id && programTitleMap.get(e.program_id)) || t("Program asignat", "Assigned program"),
-      coach_name: coachNameMap.get(e.coach_id) ?? t("Antrenor", "Coach"),
+      program_id: e.programId,
+      program_title: e.programTitle || t("Program asignat", "Assigned program"),
+      coach_name: e.coachName || t("Antrenor", "Coach"),
       status: e.status,
-      share_nutrition: e.share_nutrition,
-      current_week: e.current_week,
-      next_workout_id: nextWorkout?.id ?? null,
-    };
-  });
+      share_nutrition: e.shareNutrition,
+      current_week: e.currentWeek,
+      next_workout_id: e.nextWorkoutId ?? null,
+    }));
 
-  const previewRows = (inviteLookup.data ?? []) as ProgramInvitePreview[];
-  const initialInvitePreview = previewRows[0] ?? null;
+  const initialInvitePreview: ProgramInvitePreview | null = invitePreviewRes
+    ? {
+        id: invitePreviewRes.id,
+        coach_id: invitePreviewRes.coachId,
+        coach_name: invitePreviewRes.coachName,
+        title: invitePreviewRes.title,
+        description: invitePreviewRes.description,
+        difficulty: invitePreviewRes.difficulty,
+        duration_weeks: invitePreviewRes.durationWeeks,
+        goal: invitePreviewRes.goal,
+        requires_approval: invitePreviewRes.requiresApproval,
+      }
+    : null;
+
   const initialInviteError =
     normalizedCode && !isValidInviteCode(normalizedCode)
       ? t("Codul de invitație din link nu este valid.", "The invite code in the link is not valid.")

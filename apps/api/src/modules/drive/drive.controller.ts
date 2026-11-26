@@ -67,14 +67,24 @@ export class DriveController {
     @CurrentUser() user: AuthenticatedUser,
     @Query("code") code: string | undefined,
     @Query("state") state: string | undefined,
+    @Query("error") oauthError: string | undefined,
     @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,
+    @Res() res: Response,
   ) {
     const cookies = req.cookies as Record<string, unknown> | undefined;
     const rawCookie = cookies?.[DRIVE_OAUTH_COOKIE];
     res.clearCookie(DRIVE_OAUTH_COOKIE, { path: "/" });
 
+    const wantsHtml = typeof req.headers.accept === "string" && req.headers.accept.includes("text/html");
+    const redirectSettings = (status: string) => res.redirect(302, `/settings?drive=${status}#drive`);
+
+    if (oauthError) {
+      if (wantsHtml) return redirectSettings(oauthError === "access_denied" ? "cancelled" : "error");
+      throw new BadRequestException(`Google OAuth error: ${oauthError}`);
+    }
+
     if (!code || !state || typeof rawCookie !== "string") {
+      if (wantsHtml) return redirectSettings("state");
       throw new BadRequestException("Invalid or expired Google OAuth callback");
     }
 
@@ -82,14 +92,26 @@ export class DriveController {
     try {
       parsed = JSON.parse(rawCookie) as { state?: string; verifier?: string };
     } catch {
+      if (wantsHtml) return redirectSettings("state");
       throw new BadRequestException("Corrupted OAuth state cookie");
     }
 
     if (!parsed.state || !parsed.verifier || parsed.state !== state) {
+      if (wantsHtml) return redirectSettings("state");
       throw new BadRequestException("OAuth state mismatch");
     }
 
-    return this.driveService.completeConnect(user.userId, code, parsed.verifier);
+    try {
+      const status = await this.driveService.completeConnect(user.userId, code, parsed.verifier);
+      if (wantsHtml) return redirectSettings("connected");
+      return res.json(status);
+    } catch (err) {
+      if (wantsHtml) {
+        const msg = err instanceof Error ? err.message : "";
+        return redirectSettings(/scope/i.test(msg) ? "scope" : "error");
+      }
+      throw err;
+    }
   }
 
   @Post("disconnect")

@@ -3,6 +3,7 @@ import { Globe, Plus, User, Utensils } from "lucide-react";
 import { Text } from "@/app/components/language-provider";
 import { getLanguage } from "@/app/language";
 import { requireCoach } from "@/lib/coach/auth";
+import { serverApi } from "@/lib/api/server";
 import {
   mealPlanGoalLabel,
   mealPlanStatusLabel,
@@ -13,24 +14,22 @@ import { Badge, Card, Columns, Empty, Screen, buttonClass } from "@/app/componen
 
 export const dynamic = "force-dynamic";
 
-type MealPlanListRow = {
+interface ApiCoachMealPlanListItem {
   id: string;
-  assigned_client_id: string | null;
+  assignedClientId: string | null;
+  clientName: string | null;
   title: string;
   description: string | null;
   goal: MealPlanGoal;
   status: MealPlanStatus;
-  target_kcal: number | null;
-  target_protein_g: number | null;
-  target_carbs_g: number | null;
-  target_fat_g: number | null;
-  share_token: string | null;
-  updated_at: string;
-  meal_plan_days: {
-    id: string;
-    meal_plan_meals: { id: string }[] | null;
-  }[] | null;
-};
+  targetKcal: number | null;
+  targetProteinG: number | null;
+  targetCarbsG: number | null;
+  targetFatG: number | null;
+  shareToken: string | null;
+  updatedAt: string;
+  days?: { id: string; meals?: { id: string }[] }[];
+}
 
 const statusTone: Record<MealPlanStatus, "lime" | "gold" | undefined> = {
   active: "lime",
@@ -44,7 +43,7 @@ export default async function CoachMealPlansPage({
   searchParams: Promise<{ filter?: string }>;
 }) {
   const { t } = await getLanguage();
-  const coach = await requireCoach();
+  await requireCoach();
   const { filter: rawFilter } = await searchParams;
   const filter =
     rawFilter === "templates" ||
@@ -55,33 +54,20 @@ export default async function CoachMealPlansPage({
       ? rawFilter
       : "all";
 
-  let query = coach.supabase
-    .from("meal_plans")
-    .select(
-      "id, assigned_client_id, title, description, goal, status, target_kcal, target_protein_g, target_carbs_g, target_fat_g, share_token, updated_at, meal_plan_days(id, meal_plan_meals(id))",
-    )
-    .eq("coach_id", coach.userId)
-    .order("updated_at", { ascending: false });
-
-  if (filter === "templates") query = query.is("assigned_client_id", null);
-  else if (filter === "assigned") query = query.not("assigned_client_id", "is", null);
-  else if (filter !== "all") query = query.eq("status", filter);
-
-  const { data, error } = await query;
-  const plans = (data ?? []) as MealPlanListRow[];
-
-  const clientIds = [...new Set(plans.map((p) => p.assigned_client_id).filter((id): id is string => Boolean(id)))];
-  const clientNames = new Map<string, string>();
-  if (clientIds.length > 0) {
-    const { data: profilesData } = await coach.supabase
-      .from("profiles")
-      .select("id, display_name")
-      .in("id", clientIds);
-    for (const p of profilesData ?? []) {
-      const display = (p.display_name as string | null)?.trim();
-      if (display) clientNames.set(p.id as string, display);
-    }
+  let allPlans: ApiCoachMealPlanListItem[] = [];
+  let loadError: string | null = null;
+  try {
+    allPlans = await serverApi<ApiCoachMealPlanListItem[]>("/coach/meal-plans");
+  } catch (err) {
+    loadError = err instanceof Error ? err.message : t("Eroare la încărcare.", "Failed to load.");
   }
+
+  const plans = allPlans.filter((p) => {
+    if (filter === "templates") return p.assignedClientId === null;
+    if (filter === "assigned") return p.assignedClientId !== null;
+    if (filter !== "all") return p.status === filter;
+    return true;
+  });
 
   const filterHref = (next: string) =>
     next === "all" ? "/coach/meal-plans" : `/coach/meal-plans?filter=${next}`;
@@ -123,9 +109,9 @@ export default async function CoachMealPlansPage({
         })}
       </div>
 
-      {error ? (
+      {loadError ? (
         <Card tone="red">
-          <p className="text-sm font-semibold">{error.message}</p>
+          <p className="text-sm font-semibold">{loadError}</p>
         </Card>
       ) : plans.length === 0 ? (
         <Empty icon={Utensils}>
@@ -137,10 +123,10 @@ export default async function CoachMealPlansPage({
       ) : (
         <Columns>
           {plans.map((plan) => {
-            const days = plan.meal_plan_days ?? [];
-            const mealCount = days.reduce((sum, d) => sum + (d.meal_plan_meals?.length ?? 0), 0);
-            const clientLabel = plan.assigned_client_id
-              ? (clientNames.get(plan.assigned_client_id) ?? `${t("Client", "Client")} #${plan.assigned_client_id.slice(0, 6)}`)
+            const days = plan.days ?? [];
+            const mealCount = days.reduce((sum, d) => sum + (d.meals?.length ?? 0), 0);
+            const clientLabel = plan.assignedClientId
+              ? (plan.clientName?.trim() || `${t("Client", "Client")} #${plan.assignedClientId.slice(0, 6)}`)
               : null;
 
             return (
@@ -175,7 +161,7 @@ export default async function CoachMealPlansPage({
                       <Text ro="Șablon" en="Template" />
                     </Badge>
                   )}
-                  {plan.share_token && (
+                  {plan.shareToken && (
                     <Badge tone="lime" className="gap-1">
                       <Globe className="size-3" />
                       <Text ro="Link public" en="Public link" />
@@ -183,19 +169,19 @@ export default async function CoachMealPlansPage({
                   )}
                 </div>
 
-                {(plan.target_kcal !== null || plan.target_protein_g !== null) && (
+                {(plan.targetKcal !== null || plan.targetProteinG !== null) && (
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-inner px-3 py-2 text-xs font-semibold tabular-nums">
-                    {plan.target_kcal !== null && (
-                      <span className="text-foreground">{plan.target_kcal} kcal</span>
+                    {plan.targetKcal !== null && (
+                      <span className="text-foreground">{plan.targetKcal} kcal</span>
                     )}
-                    {plan.target_protein_g !== null && (
-                      <span className="text-ice-text">P {plan.target_protein_g}g</span>
+                    {plan.targetProteinG !== null && (
+                      <span className="text-ice-text">P {plan.targetProteinG}g</span>
                     )}
-                    {plan.target_carbs_g !== null && (
-                      <span className="text-gold-text">C {plan.target_carbs_g}g</span>
+                    {plan.targetCarbsG !== null && (
+                      <span className="text-gold-text">C {plan.targetCarbsG}g</span>
                     )}
-                    {plan.target_fat_g !== null && (
-                      <span className="text-coral-text">{t("G", "F")} {plan.target_fat_g}g</span>
+                    {plan.targetFatG !== null && (
+                      <span className="text-coral-text">{t("G", "F")} {plan.targetFatG}g</span>
                     )}
                   </div>
                 )}
@@ -207,9 +193,9 @@ export default async function CoachMealPlansPage({
                   >
                     <Text ro="Editează & Export PDF" en="Edit & Export PDF" />
                   </Link>
-                  {plan.assigned_client_id && (
+                  {plan.assignedClientId && (
                     <Link
-                      href={`/coach/clients/${plan.assigned_client_id}?tab=nutrition`}
+                      href={`/coach/clients/${plan.assignedClientId}?tab=nutrition`}
                       className={buttonClass({ variant: "secondary", small: true })}
                     >
                       <Text ro="Fișa client" en="Client profile" />

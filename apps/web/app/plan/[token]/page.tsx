@@ -1,15 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Utensils } from "lucide-react";
-import { createClient as createAnonClient } from "@supabase/supabase-js";
 import { Text } from "@/app/components/language-provider";
 import { getLanguage } from "@/app/language";
-import {
-  isValidShareToken,
-  normalizeSharedMealPlan,
-  type MealPlanDocument,
-  type RawSharedMealPlanJson,
-} from "@/lib/coach/meal-plans";
+import { isValidShareToken, type MealPlanDocument } from "@/lib/coach/meal-plans";
+import { serverApi } from "@/lib/api/server";
 import { MealPlanViewer } from "@/app/components/meal-plan-viewer";
 import { Card, CardTitle, Empty, Screen, buttonClass } from "@/app/components/ui";
 
@@ -17,20 +12,20 @@ export const dynamic = "force-dynamic";
 
 async function loadSharedPlan(token: string): Promise<MealPlanDocument | null> {
   if (!isValidShareToken(token)) return null;
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) return null;
-
-  const supabase = createAnonClient(url, anonKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-
-  const { data, error } = await supabase.rpc("get_shared_meal_plan", {
-    p_token: token,
-  });
-
-  if (error || !data) return null;
-  return normalizeSharedMealPlan(data as RawSharedMealPlanJson);
+  try {
+    const plan = await serverApi<MealPlanDocument>(`/public/meal-plans/${encodeURIComponent(token)}`, {
+      forwardCookies: false,
+      skipAuthRefresh: true,
+    });
+    return {
+      ...plan,
+      assignedClientId: null,
+      clientName: null,
+      shareToken: null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function generateMetadata({

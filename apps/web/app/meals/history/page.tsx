@@ -5,7 +5,7 @@ import { FoodLabel } from "@/app/components/food-label"
 import { useEffect, useState } from "react"
 import { ArrowLeft, ChevronRight, Loader2, Utensils, Search, ChevronLeft } from "lucide-react"
 import { Badge, BigNumber, Button, Card, Columns, Empty, Field, IconButton, Input, Label, Screen, pageWidth } from "@/app/components/ui"
-import { createClient } from "@/utils/supabase/client"
+import { clientApi } from "@/lib/api/client"
 
 const MEAL_LABELS: Record<string, string> = {
   Breakfast: "Mic Dejun",
@@ -32,9 +32,6 @@ export default function MealsHistoryPage() {
 
   async function fetchHistory(isManualFilter = false) {
     setIsLoading(true)
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
 
     let fetchStart = startDate
     let fetchEnd = endDate
@@ -48,34 +45,27 @@ export default function MealsHistoryPage() {
       fetchStart = fetchStart || thirtyDaysAgo.toISOString().split('T')[0]
     }
 
-    const { data: meals, error } = await supabase
-      .from("meals")
-      .select(`
-        id,
-        performed_on,
-        meal_type,
-        created_at,
-        meal_items (
-          id,
-          consumed_weight_g,
-          total_kcal,
-          total_protein_g,
-          total_carbs_g,
-          total_fat_g,
-          foods (
-            name,
-            brand,
-            fiber_per_100g
-          )
-        )
-      `)
-      .eq("user_id", user.id)
-      .gte("performed_on", fetchStart)
-      .lte("performed_on", fetchEnd)
-      .order("performed_on", { ascending: false })
-      .order("created_at", { ascending: true })
+    type ApiMeal = {
+      id: string
+      performedOn: string
+      mealType: string
+      createdAt: string
+      items: {
+        id: string
+        consumedWeightG: number
+        totalKcal: number
+        totalProteinG: number
+        totalCarbsG: number
+        totalFatG: number
+        food: { name: string; brand: string | null; fiberPer100g: number } | null
+      }[]
+    }
 
-    if (error) {
+    let meals: ApiMeal[]
+    try {
+      const q = new URLSearchParams({ from: fetchStart, to: fetchEnd })
+      meals = await clientApi<ApiMeal[]>(`/meals?${q.toString()}`)
+    } catch (error) {
       console.error("Eroare la preluarea istoricului:", error)
       setIsLoading(false)
       return
@@ -83,10 +73,9 @@ export default function MealsHistoryPage() {
 
     const grouped: any = {}
 
-    meals?.forEach((meal: any) => {
-      const date = meal.performed_on
+    meals.forEach((meal) => {
+      const date = meal.performedOn
       
-      // Am adăugat contoare și pentru P, C, G pe întreaga zi
       if (!grouped[date]) {
         grouped[date] = { 
           totalKcal: 0, 
@@ -97,20 +86,20 @@ export default function MealsHistoryPage() {
         }
       }
 
-      const items = (meal.meal_items || []).map((item: any) => {
-        const fiber = item.foods?.fiber_per_100g 
-          ? (item.foods.fiber_per_100g / 100) * item.consumed_weight_g 
+      const items = (meal.items || []).map((item) => {
+        const fiber = item.food?.fiberPer100g 
+          ? (item.food.fiberPer100g / 100) * item.consumedWeightG 
           : 0
 
         return {
           id: item.id,
-          name: item.foods?.name || "",
-          brand: item.foods?.brand,
-          weight: item.consumed_weight_g,
-          kcal: Number(item.total_kcal) || 0,
-          protein: Number(item.total_protein_g) || 0,
-          carbs: Number(item.total_carbs_g) || 0,
-          fat: Number(item.total_fat_g) || 0,
+          name: item.food?.name || "",
+          brand: item.food?.brand,
+          weight: item.consumedWeightG,
+          kcal: Number(item.totalKcal) || 0,
+          protein: Number(item.totalProteinG) || 0,
+          carbs: Number(item.totalCarbsG) || 0,
+          fat: Number(item.totalFatG) || 0,
           fiber: Math.round(fiber * 10) / 10
         }
       })
@@ -122,8 +111,8 @@ export default function MealsHistoryPage() {
 
       grouped[date].mealsList.push({
         id: meal.id,
-        mealType: meal.meal_type,
-        createdAt: meal.created_at,
+        mealType: meal.mealType,
+        createdAt: meal.createdAt,
         items,
         totals: {
           kcal: Math.round(mealTotalKcal),
@@ -133,7 +122,6 @@ export default function MealsHistoryPage() {
         }
       })
 
-      // Adunăm valorile în totalul zilei
       grouped[date].totalKcal += mealTotalKcal
       grouped[date].totalP += mealTotalProtein
       grouped[date].totalC += mealTotalCarbs

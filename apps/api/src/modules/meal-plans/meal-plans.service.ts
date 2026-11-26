@@ -132,6 +132,7 @@ export class MealPlansService {
   async listCoachPlans(coachId: string) {
     const plans = await this.plansRepo.find({
       where: { coachId },
+      relations: { days: { meals: true } },
       order: { updatedAt: "DESC" },
     });
     const clientIds = [...new Set(plans.map((p) => p.assignedClientId).filter((id): id is string => Boolean(id)))];

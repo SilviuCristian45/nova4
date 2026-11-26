@@ -8,7 +8,8 @@ import {
   Tooltip, ResponsiveContainer, CartesianGrid, Legend,
 } from "recharts";
 import { EXERCISES, CARDIO_ACTIVITIES } from "@/lib/workout-data";
-import { createClient } from "@/utils/supabase/client";
+import { clientApi } from "@/lib/api/client";
+import { ApiError, type ApiProfile } from "@/lib/api/types";
 import {
   getStrengthProgression, strengthProgressionCsv, withBodyWeights, type StrengthWorkout,
 } from "@/lib/strength-progression";
@@ -95,97 +96,89 @@ function StatsContent() {
       setMeasurements([]);
       setCheckins([]);
       try {
-        const supabase = createClient();
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-        if (authError || !user) throw new Error("unauthorized");
         const cutoff = new Date();
         cutoff.setDate(cutoff.getDate() - timeRange);
-        const cutoffStr = timeRange === 7300 ? "0001-01-01" : localDate(cutoff);
+        const cutoffStr = timeRange === 7300 ? "1970-01-01" : localDate(cutoff);
         const endDate = localDate();
 
         if (mode === "strength" || mode === "cardio") {
+          type ApiWorkoutList = {
+            items: {
+              performedOn: string;
+              workoutMode: string;
+              sets: { exercise: string; weight: number; reps: number; setType: string }[];
+              cardio: { activity: string; durationMin: number }[];
+            }[];
+            total: number;
+          };
           const rows: Workout[] = [];
-          for (let from = 0; ; from += PAGE_SIZE) {
-            const { data, error } = await supabase.from("workouts")
-              .select("performed_on, workout_mode, workout_sets (*), cardio_sessions (*)")
-              .eq("user_id", user.id).eq("workout_mode", mode)
-              .gte("performed_on", cutoffStr).lte("performed_on", endDate)
-              .order("performed_on").order("id").range(from, from + PAGE_SIZE - 1);
-            if (error) throw new Error(error.message);
-            rows.push(...(data ?? []));
+          const PAGE = 500;
+          for (let offset = 0; ; offset += PAGE) {
+            const q = new URLSearchParams({
+              mode,
+              from: cutoffStr,
+              to: endDate,
+              limit: String(PAGE),
+              offset: String(offset),
+            });
+            const res = await clientApi<ApiWorkoutList>(`/workouts?${q.toString()}`);
             if (cancelled) return;
-            if (!data || data.length < PAGE_SIZE) break;
+            rows.push(
+              ...res.items.map((w) => ({
+                performed_on: w.performedOn,
+                workout_mode: w.workoutMode,
+                workout_sets: w.sets.map((s) => ({
+                  exercise: s.exercise,
+                  weight: s.weight,
+                  reps: s.reps,
+                  set_type: s.setType,
+                })),
+                cardio_sessions: w.cardio.map((c) => ({
+                  activity: c.activity,
+                  duration_min: c.durationMin,
+                })),
+              })),
+            );
+            if (rows.length >= res.total || res.items.length < PAGE) break;
           }
+          rows.sort((a, b) => a.performed_on.localeCompare(b.performed_on));
           setWorkoutData(rows);
           if (mode === "strength") {
             try {
-              const weights: { date: string; weight_kg: number }[] = [];
-              for (let from = 0; ; from += PAGE_SIZE) {
-                const { data, error } = await supabase.from("daily_weight")
-                  .select("date, weight_kg").eq("user_id", user.id)
-                  .gte("date", cutoffStr).lte("date", endDate).order("date")
-                  .range(from, from + PAGE_SIZE - 1);
-                if (error) throw new Error(error.message);
-                weights.push(...(data ?? []).map((entry) => ({
-                  date: entry.date, weight_kg: Number(entry.weight_kg),
-                })));
-                if (cancelled) return;
-                if (!data || data.length < PAGE_SIZE) break;
-              }
-              setBodyWeights(weights);
-            } catch (error) {
-              if (!cancelled) setBodyWeightError(error instanceof Error ? error.message : "load-failed");
+              const q = new URLSearchParams({ from: cutoffStr, to: endDate });
+              const data = await clientApi<{ date: string; weightKg: number }[]>(`/metrics/weight?${q.toString()}`);
+              if (cancelled) return;
+              setBodyWeights(data.map((entry) => ({ date: entry.date, weight_kg: Number(entry.weightKg) })));
+            } catch (err) {
+              if (!cancelled) setBodyWeightError(err instanceof Error ? err.message : "load-failed");
             }
           }
         } else if (mode === "checkin") {
-          const rows: ({ date: string } & CheckinValues)[] = [];
-          for (let from = 0; ; from += PAGE_SIZE) {
-            const { data, error } = await supabase.from("daily_checkin")
-              .select("date, energy, satiety, sleep, note").eq("user_id", user.id)
-              .gte("date", cutoffStr).lte("date", endDate).order("date")
-              .range(from, from + PAGE_SIZE - 1);
-            if (error) {
-              if (error.code === "PGRST205" || error.code === "42P01") throw new Error("checkin-setup");
-              throw new Error(error.message);
-            }
-            rows.push(...(data ?? []).map((row) => ({ ...row, note: row.note ?? "" })));
-            if (cancelled) return;
-            if (!data || data.length < PAGE_SIZE) break;
-          }
-          setCheckins(rows);
+          const q = new URLSearchParams({ from: cutoffStr, to: endDate });
+          const data = await clientApi<({ date: string } & CheckinValues)[]>(`/metrics/checkin?${q.toString()}`);
+          if (cancelled) return;
+          setCheckins(data.map((row) => ({ ...row, note: row.note ?? "" })));
         } else {
-          const rows: Measurement[] = [];
-          for (let from = 0; ; from += PAGE_SIZE) {
-            const query = mode === "steps"
-              ? supabase.from("daily_steps").select("date, steps")
-              : supabase.from("daily_weight").select("date, weight_kg");
-            const { data, error } = await query.eq("user_id", user.id)
-              .gte("date", cutoffStr).lte("date", endDate).order("date")
-              .range(from, from + PAGE_SIZE - 1);
-            if (error) {
-              if (mode === "weight" && (error.code === "PGRST205" || error.code === "42P01")) throw new Error("weight-setup");
-              throw new Error(error.message);
-            }
-            for (const row of data ?? []) {
-              rows.push({
-                date: row.date,
-                value: Number("steps" in row ? row.steps : row.weight_kg),
-              });
-            }
-            if (cancelled) return;
-            if (!data || data.length < PAGE_SIZE) break;
-          }
+          const q = new URLSearchParams({ from: cutoffStr, to: endDate });
           if (mode === "steps") {
-            const { data, error } = await supabase.from("profiles")
-              .select("daily_steps_goal").eq("id", user.id).maybeSingle();
-            if (error) throw new Error(error.message);
+            const [stepRows, profile] = await Promise.all([
+              clientApi<{ date: string; steps: number }[]>(`/metrics/steps?${q.toString()}`),
+              clientApi<ApiProfile>("/profile"),
+            ]);
             if (cancelled) return;
-            setStepsGoal(data?.daily_steps_goal || 10000);
+            setStepsGoal(profile.dailyStepsGoal || 10000);
+            setMeasurements(stepRows.map((row) => ({ date: row.date, value: Number(row.steps) })));
+          } else {
+            const weightRows = await clientApi<{ date: string; weightKg: number }[]>(`/metrics/weight?${q.toString()}`);
+            if (cancelled) return;
+            setMeasurements(weightRows.map((row) => ({ date: row.date, value: Number(row.weightKg) })));
           }
-          setMeasurements(rows);
         }
-      } catch (error) {
-        if (!cancelled) setError(error instanceof Error ? error.message : "load-failed");
+      } catch (err) {
+        if (!cancelled) {
+          if (err instanceof ApiError && err.status === 401) setError("unauthorized");
+          else setError(err instanceof Error ? err.message : "load-failed");
+        }
       } finally {
         if (!cancelled) {
           setLoading(false);

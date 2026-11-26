@@ -98,24 +98,42 @@ function syncHarness(overrides = {}) {
     forgetOfflineAccount: async () => { state.accounts = {}; await store.lockOfflineAccount(); },
   };
   const exports = {};
+  const fakeFetch = overrides.fetch ?? (async (_url, options) => {
+    if (options.method === "POST") {
+      const entry = typeof options.body === "string" ? JSON.parse(options.body) : options.body;
+      requests.push(entry.id);
+      receipts.add(entry.id);
+      if (fail) throw new Error("Reply lost after server commit");
+      return { ok: true, status: 200, json: async () => ({ success: true, id: entry.id }) };
+    }
+    if (releaseDownload) await new Promise((resolve) => { releaseDownload(resolve); });
+    return { ok: true, status: 200, json: async () => ({ snapshot: { ...snapshot(), ownerId: downloadOwner } }) };
+  });
   const sandbox = {
     exports, console, AbortSignal, crypto, CustomEvent,
     navigator: { onLine: true, locks: { request: async (_name, action) => action() } },
     localStorage: { setItem() {} }, window: { dispatchEvent() {} },
-    fetch: overrides.fetch ?? (async (_url, options) => {
-      if (options.method === "POST") {
-        const entry = JSON.parse(options.body);
-        requests.push(entry.id);
-        receipts.add(entry.id);
-        if (fail) throw new Error("Reply lost after server commit");
-        return { ok: true, status: 200, json: async () => ({ success: true, id: entry.id }) };
-      }
-      if (releaseDownload) await new Promise((resolve) => { releaseDownload(resolve); });
-      return { ok: true, status: 200, json: async () => ({ snapshot: { ...snapshot(), ownerId: downloadOwner } }) };
-    }),
+    fetch: fakeFetch,
     require: (name) => {
       if (name === "react") return { createContext: () => ({}) };
-      if (name === "next/navigation" || name.includes("supabase/client")) return {};
+      if (name === "next/navigation") return {};
+      if (name.includes("api/client")) {
+        return {
+          clientApiFetch: (path, opts) =>
+            fakeFetch(`/api/v1${path}`, {
+              ...opts,
+              body: opts?.body !== undefined ? JSON.stringify(opts.body) : undefined,
+            }),
+        };
+      }
+      if (name.includes("api/types")) {
+        return {
+          extractApiErrorMessage: (body, fallback) =>
+            (typeof body?.message === "string" && body.message) ||
+            (typeof body?.error === "string" && body.error) ||
+            fallback,
+        };
+      }
       if (name.includes("daily-metrics")) return { localDate: () => today };
       if (name === "./model") return { validOfflinePayload };
       if (name.includes("random-id")) return { randomId: () => crypto.randomUUID() };

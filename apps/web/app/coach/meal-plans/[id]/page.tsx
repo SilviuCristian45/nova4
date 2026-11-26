@@ -18,24 +18,17 @@ export default async function EditMealPlanPage({
 
   const [coachProfile, clients] = await Promise.all([
     getOwnCoachProfile(coach.userId),
-    getCoachActiveClients(coach.supabase, coach.userId),
+    getCoachActiveClients(),
   ]);
 
   const coachName = coachProfile?.display_name ?? coach.displayName ?? t("Antrenor", "Coach");
-  const plan = await getCoachMealPlanById(coach.supabase, coach.userId, id, coachName);
+  const plan = await getCoachMealPlanById(id, coachName);
 
   if (!plan) notFound();
 
   return (
-    <Screen
-      back="/coach/meal-plans"
-      title={plan.title}
-    >
-      <MealPlanBuilder
-        initial={plan}
-        coachName={coachName}
-        clients={clients}
-      />
+    <Screen back="/coach/meal-plans" title={plan.title}>
+      <MealPlanBuilder initial={plan} coachName={coachName} clients={clients} />
     </Screen>
   );
 }

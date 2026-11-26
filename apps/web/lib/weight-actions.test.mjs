@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { test } from "node:test";
 import { parseBodyWeight, isMeasurementDate, localDate } from "./daily-metrics.ts";
+import { ApiError } from "./api/types.ts";
 
 const require = createRequire(import.meta.url);
 const ts = require("typescript");
@@ -11,23 +12,21 @@ const source = ts.transpileModule(
   { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } },
 ).outputText;
 
-function actions({ user = { id: "owner-id" }, row = null, error = null } = {}) {
+function actions({ user = { id: "owner-id" }, rows = [], error = null } = {}) {
   const calls = [];
   const revalidated = [];
-  const query = {
-    select: (...args) => { calls.push(["select", ...args]); return query; },
-    eq: (...args) => { calls.push(["eq", ...args]); return query; },
-    maybeSingle: async () => ({ data: row, error }),
-    upsert: async (...args) => { calls.push(["upsert", ...args]); return { error }; },
-  };
-  const client = {
-    auth: { getUser: async () => ({ data: { user }, error: null }) },
-    from: (table) => { calls.push(["from", table]); return query; },
-  };
   const actionExports = {};
   const mocks = {
     "next/cache": { revalidatePath: (path) => revalidated.push(path) },
-    "@/lib/supabase/server": { createClient: async () => client },
+    "@/lib/api/server": {
+      getSessionUser: async () => user,
+      serverApi: async (path, options) => {
+        calls.push([path, options]);
+        if (error) throw error;
+        return rows;
+      },
+    },
+    "@/lib/api/types": { ApiError },
     "@/lib/daily-metrics": { parseBodyWeight, isMeasurementDate },
   };
   new Function("require", "exports", source)((id) => {
@@ -44,14 +43,13 @@ function form(weight, date = localDate()) {
   return data;
 }
 
-test("weight save uses authenticated owner and upserts one row per date, then revalidates", async () => {
+test("weight save sends PUT /metrics/weight and revalidates", async () => {
   const api = actions();
   const data = form("75,55");
   data.set("user_id", "attacker-supplied-id");
   assert.deepEqual(await api.saveDailyWeight(data), { success: true, weight: 75.55 });
   assert.deepEqual(api.calls, [
-    ["from", "daily_weight"],
-    ["upsert", { user_id: "owner-id", date: localDate(), weight_kg: 75.55 }, { onConflict: "user_id,date" }],
+    ["/metrics/weight", { method: "PUT", body: { date: localDate(), weightKg: 75.55 } }],
   ]);
   assert.deepEqual(api.revalidated, ["/", "/stats"]);
 });
@@ -67,20 +65,21 @@ test("invalid weight/date and unauthenticated requests never write", async () =>
   assert.equal(guest.calls.length, 0);
 });
 
-test("weight lookup distinguishes no entry from zero and scopes by owner and date", async () => {
-  const api = actions({ row: { weight_kg: "75.55" } });
+test("weight lookup distinguishes no entry from value and queries by date", async () => {
+  const api = actions({ rows: [{ date: localDate(), weightKg: 75.55 }] });
   assert.deepEqual(await api.getDailyWeight(localDate()), { success: true, weight: 75.55 });
-  assert.deepEqual(api.calls, [["from", "daily_weight"], ["select", "weight_kg"], ["eq", "user_id", "owner-id"], ["eq", "date", localDate()]]);
+  assert.deepEqual(api.calls, [[`/metrics/weight?date=${encodeURIComponent(localDate())}`, undefined]]);
   assert.deepEqual(await actions().getDailyWeight(localDate()), { success: true, weight: null });
 });
 
-test("storage failures are explicit and never revalidate as a successful save", async (context) => {
+test("storage and auth failures are explicit and never revalidate as a successful save", async (context) => {
   context.mock.method(console, "error", () => {});
-  for (const [code, expected] of [["PGRST205", "setup"], ["42P01", "setup"], ["42501", "storage"]]) {
-    const api = actions({ error: { code, message: "Fixture storage failure" } });
-    assert.deepEqual(await api.saveDailyWeight(form("75")), { success: false, error: expected });
-    assert.deepEqual(await api.getDailyWeight(localDate()), { success: false, error: expected });
-    assert.deepEqual(api.revalidated, []);
-  }
-  assert.equal(console.error.mock.callCount(), 6);
+  const unauth = actions({ error: new ApiError(401, "Unauthorized") });
+  assert.deepEqual(await unauth.saveDailyWeight(form("75")), { success: false, error: "unauthorized" });
+  assert.deepEqual(await unauth.getDailyWeight(localDate()), { success: false, error: "unauthorized" });
+
+  const fail = actions({ error: new ApiError(500, "Server error") });
+  assert.deepEqual(await fail.saveDailyWeight(form("75")), { success: false, error: "storage" });
+  assert.deepEqual(await fail.getDailyWeight(localDate()), { success: false, error: "storage" });
+  assert.deepEqual(fail.revalidated, []);
 });
