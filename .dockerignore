@@ -6,6 +6,7 @@ packages/shared/dist
 .git
 .env*
 !.env.example
+!.env.docker.local.example
 *.tsbuildinfo
 docs
 supabase
