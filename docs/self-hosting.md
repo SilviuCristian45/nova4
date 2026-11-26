@@ -65,6 +65,47 @@ docker run --rm -v <project>_minio_data:/data -v "$PWD":/out alpine tar czf /out
 
 Find the exact volume name with `docker volume ls`. In-app JSON export and Google Drive backups remain per-user safety nets on top of full volume backups.
 
+### Restore from backup
+
+1. Stop `api` and `web` so nothing writes during restore:
+   ```bash
+   docker compose stop api web
+   ```
+2. Restore PostgreSQL dump:
+   ```bash
+   docker compose exec -T postgres pg_restore -U postgres -d replog --clean --if-exists < replog-YYYY-MM-DD.dump
+   ```
+3. Restore MinIO data volume (if needed):
+   ```bash
+   docker compose stop minio
+   docker run --rm -v <project>_minio_data:/data -v "$PWD":/in alpine sh -c "rm -rf /data/* && tar xzf /in/minio-YYYY-MM-DD.tgz -C /data"
+   ```
+4. Start the stack again and verify health:
+   ```bash
+   docker compose up -d
+   docker compose ps
+   ```
+
+### Accessing Adminer safely on a production VPS
+
+`adminer` is defined under `profiles: ["tools"]` and bound strictly to `127.0.0.1:8081` — it does **not** start during a normal `docker compose up -d` and is never exposed to the public internet.
+
+If you ever need a temporary DB GUI on the VPS:
+1. Start it on the VPS: `docker compose --profile tools up -d adminer`
+2. Open an SSH tunnel from your local machine: `ssh -L 8081:127.0.0.1:8081 user@your-vps`
+3. Open `http://localhost:8081` locally (`PostgreSQL`, server `postgres`, user `postgres`, db `replog`, password from `.env`).
+4. Stop it when finished: `docker compose --profile tools stop adminer && docker compose --profile tools rm -f adminer`
+
+### Production Pre-Deploy Checklist
+
+- [ ] DNS `A` record for `DOMAIN` points to the VPS; firewall allows only `22` (SSH), `80` (HTTP), `443` (HTTPS).
+- [ ] `.env` permissions restricted (`chmod 600 .env`) and never committed to git.
+- [ ] `PUBLIC_SCHEME=https`, `COOKIE_SECURE=true`, `SWAGGER_ENABLED=false` (unless you intentionally expose `/api/docs`).
+- [ ] `POSTGRES_PASSWORD`, `JWT_ACCESS_SECRET`, `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` generated with `node scripts/gen-secrets.mjs`.
+- [ ] After creating your own account, set `DISABLE_SIGNUP=true` if this is a private instance (`docker compose up -d api`).
+- [ ] Automated off-site cron backup configured on the host for `pg_dump` + `minio_data`.
+- [ ] If using Google Drive backups: OAuth consent screen published **In production** and redirect URI set to `https://<DOMAIN>/api/v1/drive/callback`.
+
 ## Migrating existing data from Supabase
 
 ### Option A — Full database + storage migration (`scripts/migrate-from-supabase.ts`)

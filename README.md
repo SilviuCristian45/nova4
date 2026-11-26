@@ -66,9 +66,12 @@ node --test scripts/migrate-from-supabase.test.mjs  # Supabase migration script 
 npm run build                                       # Production build (shared + api + web with webpack PWA)
 ```
 
-## Self-Hosting & Supabase Migration
+## Documentation
 
-RepLog deploys on a single VPS with 5 containers (`postgres`, `minio`, `api`, `web`, `caddy`) and automatic HTTPS.
+Complete engineering documentation lives in [`docs/`](./docs/README.md):
 
-- Full deployment, operations, backup, and Google Drive setup guide: **[docs/self-hosting.md](./docs/self-hosting.md)**
-- Migrating an existing Supabase instance (users with `bcrypt` hashes, all 30 domain tables, and storage buckets): use `node scripts/migrate-from-supabase.ts --dry-run` (see `docs/self-hosting.md`).
+- **[docs/architecture.md](./docs/architecture.md)** — system architecture, monorepo layout, auth/refresh flow, RBAC guards, 32-table DB schema, MinIO SigV4 storage, offline PWA, and design system
+- **[docs/development.md](./docs/development.md)** — full local dev guide (hot-reload mode, full local Docker + Adminer, TypeORM migrations, tests & isolated E2E setup)
+- **[docs/feature-development.md](./docs/feature-development.md)** — step-by-step playbook for implementing new features (`shared` → TypeORM → NestJS → GDPR checklist → Next.js → Offline → Tests)
+- **[docs/self-hosting.md](./docs/self-hosting.md)** — VPS production deployment (5 services + Caddy HTTPS), backups & restore, safe Adminer SSH tunnel, pre-deploy checklist, and Supabase data migration (`scripts/migrate-from-supabase.ts`)
+- **[docs/troubleshooting.md](./docs/troubleshooting.md)** — real-world issues, pitfalls, and fixes (Node 24 Argon2, workspaces Docker, MinIO SigV4, cookies/CORS, Supabase IPv6, Tailwind 4, PWA/SW, Google Drive)
