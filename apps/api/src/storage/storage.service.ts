@@ -14,6 +14,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { CHECKIN_PHOTO_BUCKET, PHOTO_BUCKET } from "@replog/shared";
+import { decryptPhotoBuffer, encryptPhotoBuffer, parsePhotoEncryptionKey } from "./photo-crypto";
 
 export interface PresignedUploadOptions {
   contentType?: string;
@@ -31,8 +32,10 @@ export class StorageService implements OnModuleInit {
   private readonly logger = new Logger(StorageService.name);
   private readonly client: S3Client;
   private readonly signingClient: S3Client;
+  private readonly photoEncryptionKey: Buffer | null;
 
   constructor(private readonly config: ConfigService) {
+    this.photoEncryptionKey = parsePhotoEncryptionKey(this.config.get<string>("PHOTO_ENCRYPTION_KEY"));
     const region = this.config.get<string>("S3_REGION") ?? "us-east-1";
     const endpoint = this.config.get<string>("S3_ENDPOINT")?.trim() || undefined;
     const publicEndpoint = this.config.get<string>("S3_PUBLIC_ENDPOINT")?.trim() || endpoint;
@@ -93,6 +96,14 @@ export class StorageService implements OnModuleInit {
 
   getCheckinPhotosBucket(): string {
     return this.config.get<string>("S3_BUCKET_CHECKIN_PHOTOS")?.trim() || CHECKIN_PHOTO_BUCKET;
+  }
+
+  isPhotoEncryptionEnabled(): boolean {
+    return this.photoEncryptionKey !== null;
+  }
+
+  private isPhotoBucket(bucket: string): boolean {
+    return bucket === this.getProgressPhotosBucket() || bucket === this.getCheckinPhotosBucket();
   }
 
   async ensureBucket(bucket: string): Promise<void> {
@@ -162,17 +173,24 @@ export class StorageService implements OnModuleInit {
   }
 
   async uploadObject(bucket: string, key: string, body: Buffer | Uint8Array, contentType = "image/jpeg"): Promise<void> {
+    const rawBuffer = Buffer.isBuffer(body) ? body : Buffer.from(body);
+    const shouldEncrypt = this.photoEncryptionKey !== null && this.isPhotoBucket(bucket);
+    const payload = shouldEncrypt
+      ? encryptPhotoBuffer(rawBuffer, this.photoEncryptionKey, `${bucket}/${key}`)
+      : rawBuffer;
+    const storedContentType = shouldEncrypt ? "application/octet-stream" : contentType;
+
     await this.client.send(
       new PutObjectCommand({
         Bucket: bucket,
         Key: key,
-        Body: body,
-        ContentType: contentType,
+        Body: payload,
+        ContentType: storedContentType,
       }),
     );
   }
 
-  async downloadObject(bucket: string, key: string): Promise<Buffer | null> {
+  async downloadRawObject(bucket: string, key: string): Promise<Buffer | null> {
     try {
       const response = await this.client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
       if (!response.Body) return null;
@@ -184,6 +202,15 @@ export class StorageService implements OnModuleInit {
       if (code === "NotFound" || code === "NoSuchKey" || status === 404) return null;
       throw err;
     }
+  }
+
+  async downloadObject(bucket: string, key: string): Promise<Buffer | null> {
+    const raw = await this.downloadRawObject(bucket, key);
+    if (!raw) return null;
+    if (this.isPhotoBucket(bucket)) {
+      return decryptPhotoBuffer(raw, this.photoEncryptionKey, `${bucket}/${key}`);
+    }
+    return raw;
   }
 
   async deleteObject(bucket: string, key: string): Promise<void> {

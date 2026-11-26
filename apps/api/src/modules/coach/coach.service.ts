@@ -9,6 +9,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { randomUUID } from "node:crypto";
 import { DataSource, In, IsNull, Repository } from "typeorm";
 import {
+  PHOTO_MAX_BYTES,
   checkinPhotoPath,
   checkinPhotoPathsFromRow,
   classifyClientAdherence,
@@ -27,6 +28,7 @@ import {
   validateProgramPayload,
   validateWeeklyCheckinInput,
 } from "@replog/shared";
+import { isJpegBuffer } from "../../storage/photo-crypto";
 import {
   CoachClientNoteEntity,
   CoachProfileEntity,
@@ -869,7 +871,7 @@ export class CoachService {
           .orderBy("c.date", "DESC")
           .getMany(),
         this.checkinsRepo.find({
-          where: { coachId, clientId },
+          where: { clientId },
           order: { weekStart: "DESC" },
           take: 24,
         }),
@@ -1524,9 +1526,23 @@ export class CoachService {
   // Weekly Check-ins + Check-in Photos
   // =========================================================================
 
+  private isEncryptedPhotoMode(): boolean {
+    return typeof this.storage.isPhotoEncryptionEnabled === "function" && this.storage.isPhotoEncryptionEnabled();
+  }
+
   async requestCheckinPhotoUploadUrl(clientId: string, sizeBytes: number) {
     const id = randomUUID().toLowerCase();
     const path = checkinPhotoPath(clientId, id);
+
+    if (this.isEncryptedPhotoMode()) {
+      return {
+        id,
+        path,
+        uploadUrl: `/api/v1/checkins/weekly/photo-upload/${id}`,
+        expiresIn: 600,
+      };
+    }
+
     const bucket = this.storage.getCheckinPhotosBucket();
     const { url, expiresIn } = await this.storage.createPresignedUploadUrl(bucket, path, {
       contentType: "image/jpeg",
@@ -1534,6 +1550,61 @@ export class CoachService {
       expiresInSeconds: 600,
     });
     return { id, path, uploadUrl: url, expiresIn };
+  }
+
+  async uploadCheckinPhotoFile(clientId: string, idRaw: string, rawBody: unknown) {
+    if (!UUID_REGEX.test(idRaw)) {
+      throw new BadRequestException("Invalid check-in photo ID");
+    }
+    if (!Buffer.isBuffer(rawBody) || rawBody.length === 0) {
+      throw new BadRequestException("JPEG image body is required");
+    }
+    if (rawBody.length > PHOTO_MAX_BYTES) {
+      throw new BadRequestException("Check-in photo exceeds maximum allowed size");
+    }
+    if (!isJpegBuffer(rawBody)) {
+      throw new BadRequestException("Only valid JPEG images are supported");
+    }
+
+    const id = idRaw.toLowerCase();
+    const path = checkinPhotoPath(clientId, id);
+    const bucket = this.storage.getCheckinPhotosBucket();
+    await this.storage.uploadObject(bucket, path, rawBody, "image/jpeg");
+    return { id, path, sizeBytes: rawBody.length };
+  }
+
+  async getCheckinPhotoFile(requesterUserId: string, checkinIdRaw: string, slot: string): Promise<Buffer> {
+    if (!UUID_REGEX.test(checkinIdRaw)) throw new NotFoundException("Weekly check-in not found");
+    if (slot !== "front" && slot !== "back" && slot !== "side") {
+      throw new BadRequestException("Invalid check-in photo slot");
+    }
+
+    const checkin = await this.checkinsRepo.findOne({ where: { id: checkinIdRaw.toLowerCase() } });
+    if (!checkin) throw new NotFoundException("Weekly check-in not found");
+
+    // Strictly allow ONLY the client themselves or their CURRENT active coach (supports switching coaches seamlessly).
+    if (requesterUserId !== checkin.clientId) {
+      const activeEnrollment = await this.enrollmentsRepo.findOne({
+        where: { clientId: checkin.clientId, coachId: requesterUserId, status: "active" },
+        select: { id: true },
+      });
+      if (!activeEnrollment) {
+        throw new ForbiddenException("Only the client or their currently active coach can view this check-in photo");
+      }
+    }
+
+    const path =
+      slot === "front"
+        ? checkin.photoFrontPath
+        : slot === "back"
+          ? checkin.photoBackPath
+          : checkin.photoSidePath;
+    if (!path) throw new NotFoundException("Check-in photo not found for this slot");
+
+    const bucket = this.storage.getCheckinPhotosBucket();
+    const bytes = await this.storage.downloadObject(bucket, path);
+    if (!bytes) throw new NotFoundException("Check-in photo file not found in storage");
+    return bytes;
   }
 
   async listClientWeeklyCheckins(clientId: string) {
@@ -1685,15 +1756,18 @@ export class CoachService {
   }
 
   private async attachCheckinPhotoUrls(rows: WeeklyCheckinEntity[]) {
+    const encryptedMode = this.isEncryptedPhotoMode();
     const paths: string[] = [];
-    for (const r of rows) {
-      if (r.photoFrontPath) paths.push(r.photoFrontPath);
-      if (r.photoBackPath) paths.push(r.photoBackPath);
-      if (r.photoSidePath) paths.push(r.photoSidePath);
+    if (!encryptedMode) {
+      for (const r of rows) {
+        if (r.photoFrontPath) paths.push(r.photoFrontPath);
+        if (r.photoBackPath) paths.push(r.photoBackPath);
+        if (r.photoSidePath) paths.push(r.photoSidePath);
+      }
     }
 
     const signed =
-      paths.length > 0
+      !encryptedMode && paths.length > 0
         ? await this.storage.createPresignedDownloadUrls(this.storage.getCheckinPhotosBucket(), paths, 600)
         : new Map<string, string>();
 
@@ -1713,11 +1787,17 @@ export class CoachService {
       photoFrontPath: r.photoFrontPath ?? null,
       photoBackPath: r.photoBackPath ?? null,
       photoSidePath: r.photoSidePath ?? null,
-      photoUrls: {
-        ...(r.photoFrontPath && signed.has(r.photoFrontPath) ? { front: signed.get(r.photoFrontPath) } : {}),
-        ...(r.photoBackPath && signed.has(r.photoBackPath) ? { back: signed.get(r.photoBackPath) } : {}),
-        ...(r.photoSidePath && signed.has(r.photoSidePath) ? { side: signed.get(r.photoSidePath) } : {}),
-      },
+      photoUrls: encryptedMode
+        ? {
+            ...(r.photoFrontPath ? { front: `/api/v1/checkins/weekly/${r.id}/photo/front` } : {}),
+            ...(r.photoBackPath ? { back: `/api/v1/checkins/weekly/${r.id}/photo/back` } : {}),
+            ...(r.photoSidePath ? { side: `/api/v1/checkins/weekly/${r.id}/photo/side` } : {}),
+          }
+        : {
+            ...(r.photoFrontPath && signed.has(r.photoFrontPath) ? { front: signed.get(r.photoFrontPath) } : {}),
+            ...(r.photoBackPath && signed.has(r.photoBackPath) ? { back: signed.get(r.photoBackPath) } : {}),
+            ...(r.photoSidePath && signed.has(r.photoSidePath) ? { side: signed.get(r.photoSidePath) } : {}),
+          },
       createdAt: r.createdAt.toISOString(),
       updatedAt: r.updatedAt.toISOString(),
     }));

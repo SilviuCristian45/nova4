@@ -72,6 +72,7 @@ function ensureLocalDockerEnv() {
     `JWT_ACCESS_SECRET=${randomBytes(48).toString("base64url")}`,
     `MINIO_ROOT_USER=replog${randomBytes(6).toString("hex")}`,
     `MINIO_ROOT_PASSWORD=${randomBytes(24).toString("hex")}`,
+    `PHOTO_ENCRYPTION_KEY=${devEnv.PHOTO_ENCRYPTION_KEY || randomBytes(32).toString("base64")}`,
     "",
     `USDA_API_KEY=${devEnv.USDA_API_KEY ?? ""}`,
     `GOOGLE_CLIENT_ID=${devEnv.GOOGLE_CLIENT_ID ?? ""}`,

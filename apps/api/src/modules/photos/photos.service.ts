@@ -9,6 +9,7 @@ import {
   isMeasurementDate,
 } from "@replog/shared";
 import { ProgressPhotoEntity } from "../../database/entities";
+import { PHOTO_CRYPTO_OVERHEAD, isJpegBuffer } from "../../storage/photo-crypto";
 import { StorageService } from "../../storage/storage.service";
 import type { CreatePhotoDto, RequestPhotoUploadDto } from "./dto/photo.dto";
 
@@ -22,6 +23,10 @@ export class PhotosService {
     private readonly storage: StorageService,
   ) {}
 
+  private isEncryptedMode(): boolean {
+    return typeof this.storage.isPhotoEncryptionEnabled === "function" && this.storage.isPhotoEncryptionEnabled();
+  }
+
   async requestUploadUrl(userId: string, dto: RequestPhotoUploadDto) {
     const count = await this.photosRepo.count({ where: { userId } });
     if (count >= PHOTO_MAX_PER_USER) {
@@ -30,6 +35,16 @@ export class PhotosService {
 
     const id = randomUUID().toLowerCase();
     const path = photoPath(userId, id);
+
+    if (this.isEncryptedMode()) {
+      return {
+        id,
+        path,
+        uploadUrl: `/api/v1/photos/upload/${id}`,
+        expiresIn: 600,
+      };
+    }
+
     const bucket = this.storage.getProgressPhotosBucket();
     const { url, expiresIn } = await this.storage.createPresignedUploadUrl(bucket, path, {
       contentType: "image/jpeg",
@@ -40,18 +55,57 @@ export class PhotosService {
     return { id, path, uploadUrl: url, expiresIn };
   }
 
+  async uploadEncryptedFile(userId: string, idRaw: string, rawBody: unknown) {
+    if (!UUID_REGEX.test(idRaw)) {
+      throw new BadRequestException("Invalid photo ID");
+    }
+    const count = await this.photosRepo.count({ where: { userId } });
+    if (count >= PHOTO_MAX_PER_USER) {
+      throw new BadRequestException(`Photo limit reached (${PHOTO_MAX_PER_USER})`);
+    }
+    if (!Buffer.isBuffer(rawBody) || rawBody.length === 0) {
+      throw new BadRequestException("JPEG image body is required");
+    }
+    if (rawBody.length > PHOTO_MAX_BYTES) {
+      throw new BadRequestException("Photo exceeds maximum allowed size");
+    }
+    if (!isJpegBuffer(rawBody)) {
+      throw new BadRequestException("Only valid JPEG images are supported");
+    }
+
+    const id = idRaw.toLowerCase();
+    const path = photoPath(userId, id);
+    const bucket = this.storage.getProgressPhotosBucket();
+    await this.storage.uploadObject(bucket, path, rawBody, "image/jpeg");
+    return { id, path, sizeBytes: rawBody.length };
+  }
+
+  async getPhotoFile(userId: string, idRaw: string): Promise<Buffer> {
+    if (!UUID_REGEX.test(idRaw)) throw new NotFoundException("Photo not found");
+    const row = await this.photosRepo.findOne({ where: { id: idRaw.toLowerCase(), userId } });
+    if (!row) throw new NotFoundException("Photo not found");
+
+    const bucket = this.storage.getProgressPhotosBucket();
+    const bytes = await this.storage.downloadObject(bucket, row.path);
+    if (!bytes) throw new NotFoundException("Photo file not found in storage");
+    return bytes;
+  }
+
   async list(userId: string) {
     const rows = await this.photosRepo.find({
       where: { userId },
       order: { takenOn: "DESC", createdAt: "DESC" },
     });
 
+    const encryptedMode = this.isEncryptedMode();
     const bucket = this.storage.getProgressPhotosBucket();
-    const signedByPath = await this.storage.createPresignedDownloadUrls(
-      bucket,
-      rows.map((r) => r.path),
-      600,
-    );
+    const signedByPath = encryptedMode
+      ? new Map<string, string>()
+      : await this.storage.createPresignedDownloadUrls(
+          bucket,
+          rows.map((r) => r.path),
+          600,
+        );
 
     return rows.map((row) => ({
       id: row.id,
@@ -61,7 +115,7 @@ export class PhotosService {
       path: row.path,
       sizeBytes: row.sizeBytes,
       createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
-      url: signedByPath.get(row.path) ?? null,
+      url: encryptedMode ? `/api/v1/photos/${row.id}/file` : (signedByPath.get(row.path) ?? null),
     }));
   }
 
@@ -76,15 +130,21 @@ export class PhotosService {
     const path = photoPath(userId, id);
     const bucket = this.storage.getProgressPhotosBucket();
 
+    const encryptedMode = this.isEncryptedMode();
     const head = await this.storage.headObject(bucket, path);
     if (!head) {
       throw new BadRequestException("Photo file has not been uploaded to storage yet");
     }
-    const verifiedSize = head.contentLength > 0 ? head.contentLength : dto.sizeBytes;
-    if (verifiedSize <= 0 || verifiedSize > PHOTO_MAX_BYTES) {
+    const maxStoredBytes = encryptedMode ? PHOTO_MAX_BYTES + PHOTO_CRYPTO_OVERHEAD : PHOTO_MAX_BYTES;
+    const rawStoredLength = head.contentLength > 0 ? head.contentLength : dto.sizeBytes;
+    if (rawStoredLength <= 0 || rawStoredLength > maxStoredBytes) {
       await this.storage.deleteObject(bucket, path).catch(() => undefined);
       throw new BadRequestException("Uploaded photo exceeds maximum allowed size");
     }
+    const verifiedSize =
+      encryptedMode && head.contentLength > PHOTO_CRYPTO_OVERHEAD
+        ? Math.min(PHOTO_MAX_BYTES, head.contentLength - PHOTO_CRYPTO_OVERHEAD)
+        : Math.min(PHOTO_MAX_BYTES, rawStoredLength);
 
     const count = await this.photosRepo.count({ where: { userId } });
     if (count >= PHOTO_MAX_PER_USER) {
@@ -103,7 +163,9 @@ export class PhotosService {
         sizeBytes: verifiedSize,
       });
       const saved = await this.photosRepo.save(entity);
-      const url = await this.storage.createPresignedDownloadUrl(bucket, saved.path, 600);
+      const url = encryptedMode
+        ? `/api/v1/photos/${saved.id}/file`
+        : await this.storage.createPresignedDownloadUrl(bucket, saved.path, 600);
 
       return {
         id: saved.id,

@@ -24,10 +24,10 @@ No separate API subdomain, no Supabase containers, and no external cron containe
 2. **Secrets and config**:
    ```bash
    git clone <repo> && cd nova4
-   node scripts/gen-secrets.mjs      # prints POSTGRES_PASSWORD, JWT_ACCESS_SECRET, MINIO_ROOT_USER, MINIO_ROOT_PASSWORD, DRIVE_TOKEN_KEY, CRON_SECRET
+   node scripts/gen-secrets.mjs      # prints POSTGRES_PASSWORD, JWT_ACCESS_SECRET, MINIO_ROOT_USER, MINIO_ROOT_PASSWORD, PHOTO_ENCRYPTION_KEY, DRIVE_TOKEN_KEY, CRON_SECRET
    cp .env.example .env              # paste them in and set DOMAIN
    ```
-   `POSTGRES_PASSWORD` and `MINIO_ROOT_*` are initialized into the `postgres_data` / `minio_data` volumes on first start — do not change them after initial bootstrap.
+   `POSTGRES_PASSWORD`, `MINIO_ROOT_*`, and `PHOTO_ENCRYPTION_KEY` are persisted in volumes / encrypted blobs — do not change them after initial bootstrap. With `PHOTO_ENCRYPTION_KEY` set, all progress and check-in photos are encrypted with AES-256-GCM before being written to S3/MinIO (unreadable in the MinIO/Silo console or storage backups; decrypted in memory by the API only for the owner or their currently active coach). To encrypt any legacy plaintext photos already in MinIO, run `node scripts/encrypt-existing-photos.ts`.
 3. **Start**:
    ```bash
    docker compose up -d --build

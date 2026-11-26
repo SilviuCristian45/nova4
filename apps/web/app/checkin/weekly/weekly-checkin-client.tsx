@@ -246,6 +246,7 @@ export function WeeklyCheckinClient({
         );
         const putRes = await fetch(uploadUrl, {
           method: "PUT",
+          credentials: "same-origin",
           headers: { "Content-Type": "image/jpeg" },
           body: blob,
         });

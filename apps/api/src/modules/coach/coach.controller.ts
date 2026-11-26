@@ -1,5 +1,6 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query, UseGuards } from "@nestjs/common";
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from "@nestjs/swagger";
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query, Req, Res, UseGuards } from "@nestjs/common";
+import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiQuery, ApiTags } from "@nestjs/swagger";
+import type { Request, Response } from "express";
 import type { AuthenticatedUser } from "../../common/auth/auth-user.type";
 import { RequireNutritionShare } from "../../common/decorators/coach-access.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -281,9 +282,35 @@ export class WeeklyCheckinsController {
   }
 
   @Post("photo-upload-url")
-  @ApiOperation({ summary: "Request a presigned S3 PUT URL for a weekly check-in photo" })
+  @ApiOperation({ summary: "Request an upload URL for a weekly check-in photo (encrypted API endpoint when PHOTO_ENCRYPTION_KEY is set)" })
   requestPhotoUploadUrl(@CurrentUser() user: AuthenticatedUser, @Body() dto: RequestCheckinPhotoUploadDto) {
     return this.coachService.requestCheckinPhotoUploadUrl(user.userId, dto.sizeBytes);
+  }
+
+  @Put("photo-upload/:id")
+  @ApiConsumes("image/jpeg")
+  @ApiOperation({ summary: "Upload a weekly check-in JPEG photo to be AES-256-GCM encrypted at rest in S3/MinIO" })
+  uploadPhotoFile(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @Req() req: Request,
+  ) {
+    return this.coachService.uploadCheckinPhotoFile(user.userId, id, req.body);
+  }
+
+  @Get(":id/photo/:slot")
+  @ApiOperation({ summary: "Stream a decrypted weekly check-in photo (strictly client or their currently active coach)" })
+  async getPhotoFile(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @Param("slot") slot: string,
+    @Res() res: Response,
+  ) {
+    const bytes = await this.coachService.getCheckinPhotoFile(user.userId, id, slot);
+    res.setHeader("Content-Type", "image/jpeg");
+    res.setHeader("Cache-Control", "private, max-age=300, no-transform");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.send(bytes);
   }
 
   @Post()

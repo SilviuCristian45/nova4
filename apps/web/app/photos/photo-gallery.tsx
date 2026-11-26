@@ -74,6 +74,7 @@ export default function PhotoGallery({ photos }: { photos: GalleryPhoto[] }) {
 
       const putRes = await fetch(uploadUrl, {
         method: "PUT",
+        credentials: "same-origin",
         headers: { "Content-Type": "image/jpeg" },
         body: blob,
       });
