@@ -126,6 +126,10 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto, meta: SessionMeta = {}): Promise<AuthSessionResponse> {
+    if (this.configService.get<string>("DISABLE_SIGNUP") === "true") {
+      throw new ForbiddenException("Registration is disabled on this server");
+    }
+
     const email = dto.email.trim().toLowerCase();
     const displayName = dto.displayName?.trim() || null;
     const requestedRole: UserRole = dto.role === "coach" ? "coach" : "client";

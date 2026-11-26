@@ -1,5 +1,8 @@
 node_modules
 .next
+apps/web/.next
+apps/api/dist
+packages/shared/dist
 .git
 .env*
 !.env.example
@@ -9,10 +12,14 @@ supabase
 scripts
 backup_complet.sql
 npm-debug.log*
-Dockerfile
 docker-compose*.yml
 public/sw.js
 public/sw.js.map
 public/workbox-*.js
 public/worker-*.js
 public/fallback-*.js
+apps/web/public/sw.js
+apps/web/public/sw.js.map
+apps/web/public/workbox-*.js
+apps/web/public/worker-*.js
+apps/web/public/fallback-*.js

@@ -7,6 +7,11 @@ import helmet from "helmet";
 export function configureApp(app: INestApplication, options: { enableSwagger?: boolean } = {}): void {
   const config = app.get(ConfigService);
 
+  if (config.get<string>("TRUST_PROXY") !== "false") {
+    const httpInstance = app.getHttpAdapter().getInstance() as { set?: (key: string, value: unknown) => void };
+    httpInstance?.set?.("trust proxy", 1);
+  }
+
   app.setGlobalPrefix("api/v1");
   app.use(helmet());
   app.use(cookieParser());

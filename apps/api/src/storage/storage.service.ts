@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
   CreateBucketCommand,
@@ -27,7 +27,7 @@ export interface ObjectHeadInfo {
 }
 
 @Injectable()
-export class StorageService {
+export class StorageService implements OnModuleInit {
   private readonly logger = new Logger(StorageService.name);
   private readonly client: S3Client;
   private readonly signingClient: S3Client;
@@ -57,6 +57,34 @@ export class StorageService {
       publicEndpoint && publicEndpoint !== endpoint
         ? new S3Client({ ...baseConfig, endpoint: publicEndpoint })
         : this.client;
+  }
+
+  async onModuleInit(): Promise<void> {
+    if (this.config.get<string>("S3_AUTO_CREATE_BUCKETS") === "false") {
+      return;
+    }
+
+    const buckets = [this.getProgressPhotosBucket(), this.getCheckinPhotosBucket()];
+    for (const bucket of buckets) {
+      await this.ensureBucketWithRetry(bucket);
+    }
+  }
+
+  private async ensureBucketWithRetry(bucket: string, attempts = 3): Promise<void> {
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        await this.ensureBucket(bucket);
+        return;
+      } catch (err) {
+        if (attempt === attempts) {
+          this.logger.warn(
+            `Could not verify/create S3 bucket "${bucket}" after ${attempts} attempts: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+      }
+    }
   }
 
   getProgressPhotosBucket(): string {

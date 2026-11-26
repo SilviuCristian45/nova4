@@ -7,10 +7,12 @@ import { configureApp } from "./app.setup";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  configureApp(app, { enableSwagger: true });
+  const config = app.get(ConfigService);
+  configureApp(app, {
+    enableSwagger: config.get<string>("SWAGGER_ENABLED") !== "false",
+  });
   app.enableShutdownHooks();
 
-  const config = app.get(ConfigService);
   const port = Number(config.get<string>("PORT") ?? 4000);
   await app.listen(port);
   Logger.log(`RepLog API listening on http://localhost:${port}/api/v1 (Swagger: /api/docs)`, "Bootstrap");

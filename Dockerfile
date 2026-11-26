@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# RepLog (Next.js standalone in npm workspaces monorepo). Build: docker compose build
+# RepLog Next.js Web (standalone in npm workspaces monorepo). Build: docker compose build web
 
 FROM node:22-alpine AS deps
 WORKDIR /app
@@ -15,14 +15,10 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package.json package-lock.json ./
 COPY packages/shared ./packages/shared
 COPY apps/web ./apps/web
-# NEXT_PUBLIC_* values are inlined into the browser bundle at build time, so they must be build args,
-# not runtime env. Changing them means rebuilding the image.
-ARG NEXT_PUBLIC_SUPABASE_URL
-ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
-ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
-    NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY \
+ARG INTERNAL_API_URL=http://api:4000
+ENV INTERNAL_API_URL=$INTERNAL_API_URL \
     NEXT_TELEMETRY_DISABLED=1
-RUN npm run build
+RUN npm run build:shared && npm run build:web
 
 FROM node:22-alpine AS runner
 WORKDIR /app

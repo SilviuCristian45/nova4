@@ -84,6 +84,7 @@ export function buildDataSourceOptions(databaseUrl?: string): DataSourceOptions 
     url,
     entities: DATABASE_ENTITIES,
     migrations: DATABASE_MIGRATIONS,
+    migrationsRun: process.env.TYPEORM_MIGRATIONS_RUN !== "false",
     synchronize: false,
     logging: process.env.TYPEORM_LOGGING === "true",
   };
