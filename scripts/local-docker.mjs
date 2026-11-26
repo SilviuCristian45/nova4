@@ -61,6 +61,8 @@ function ensureLocalDockerEnv() {
     "HTTP_PORT=80",
     "HTTPS_PORT=443",
     "ADMINER_PORT=8081",
+    "MINIO_CONSOLE_PORT=9001",
+    "MINIO_BROWSER=on",
     "COOKIE_SECURE=false",
     "COOKIE_DOMAIN=",
     "SWAGGER_ENABLED=true",
@@ -138,6 +140,7 @@ function main() {
   const env = ensureLocalDockerEnv();
   const httpPort = env.HTTP_PORT || "80";
   const adminerPort = env.ADMINER_PORT || "8081";
+  const minioConsolePort = env.MINIO_CONSOLE_PORT || "9001";
   const baseUrl = httpPort === "80" ? "http://localhost" : `http://localhost:${httpPort}`;
 
   switch (command) {
@@ -154,6 +157,7 @@ function main() {
       console.log(`  API Health:   ${baseUrl}/api/v1/health`);
       console.log(`  Adminer (DB): http://localhost:${adminerPort}  (PostgreSQL / server: postgres / user: postgres / db: replog)`);
       console.log(`  DB password:  ${env.POSTGRES_PASSWORD ?? "(see .env.docker.local)"}`);
+      console.log(`  S3 Console:   http://localhost:${minioConsolePort}  (user: ${env.MINIO_ROOT_USER ?? ""} / pass: ${env.MINIO_ROOT_PASSWORD ?? ""})`);
       console.log("  Stop stack:   npm run docker:local:down");
       console.log("  View logs:    npm run docker:local:logs");
       return;
