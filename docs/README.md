@@ -17,4 +17,5 @@ Acest folder conține documentația tehnică completă a proiectului **RepLog** 
 - **[../README.md](../README.md)** — prezentare generală și quick-start pentru repository.
 - **[nestjs-migration-plan.md](./nestjs-migration-plan.md)** — planul istoric al migrării din Supabase în NestJS (Fazele 0–5, finalizate).
 - **[idei/poze-criptate-e2ee.md](./idei/poze-criptate-e2ee.md)** — analiză de design amânată pentru criptare E2E a pozelor de progres.
+- **[idei/gym-management-qr-checkins.md](./idei/gym-management-qr-checkins.md)** — specificație & arhitectură pentru management sală de fitness, QR check-in (poster printat + live feed SSE + alertă sonoră) și abonamente.
 - **[../AGENTS.md](../AGENTS.md)** & **[../CLAUDE.md](../CLAUDE.md)** — ghiduri concise de reguli și invarianți de domeniu.
