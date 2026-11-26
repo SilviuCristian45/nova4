@@ -12,6 +12,7 @@ import { AuthModule } from "./modules/auth/auth.module";
 import { CoachModule } from "./modules/coach/coach.module";
 import { DriveModule } from "./modules/drive/drive.module";
 import { FoodsModule } from "./modules/foods/foods.module";
+import { GymModule } from "./modules/gym/gym.module";
 import { HealthModule } from "./modules/health/health.module";
 import { MealPlansModule } from "./modules/meal-plans/meal-plans.module";
 import { MealsModule } from "./modules/meals/meals.module";
@@ -57,6 +58,7 @@ import { StorageModule } from "./storage/storage.module";
     MealPlansModule,
     AccountModule,
     AdminModule,
+    GymModule,
     DriveModule,
     HealthModule,
   ],

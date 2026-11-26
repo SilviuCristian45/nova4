@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import {
   Ban,
+  Building2,
   Camera,
   Check,
   CheckCircle2,
@@ -36,6 +38,7 @@ import {
   Message,
   Screen,
   Segmented,
+  buttonClass,
 } from "@/app/components/ui";
 import { clientApi } from "@/lib/api/client";
 import { ApiError, type ApiAdminUser, type ApiAdminUserListResponse } from "@/lib/api/types";
@@ -358,6 +361,10 @@ export function AdminUsersClient({
       back="/"
       right={
         <div className="flex items-center gap-2">
+          <Link href="/admin/gyms" className={buttonClass({ variant: "soft", tone: "coral", small: true })}>
+            <Building2 className="size-4" />
+            {t("Săli", "Gyms")}
+          </Link>
           <IconButton
             icon={RefreshCw}
             label={t("Reîncarcă", "Refresh")}

@@ -10,6 +10,14 @@ import {
   EnrollmentEntity,
   FoodEntity,
   GoogleDriveBackupEntity,
+  GymAuditLogEntity,
+  GymCheckinEntity,
+  GymEntity,
+  GymMemberEntity,
+  GymMembershipPlanEntity,
+  GymPaymentEntity,
+  GymStaffEntity,
+  GymSubscriptionEntity,
   MealEntity,
   MealItemEntity,
   MealPlanDayEntity,
@@ -36,6 +44,7 @@ import {
 } from "./entities";
 import { InitialSchema1764000000000 } from "./migrations/1764000000000-InitialSchema";
 import { AddUserDisabledAt1765000000000 } from "./migrations/1765000000000-AddUserDisabledAt";
+import { AddGymManagement1766000000000 } from "./migrations/1766000000000-AddGymManagement";
 
 export const DATABASE_ENTITIES = [
   UserEntity,
@@ -70,9 +79,21 @@ export const DATABASE_ENTITIES = [
   MealPlanMealEntity,
   MealPlanItemEntity,
   GoogleDriveBackupEntity,
+  GymEntity,
+  GymStaffEntity,
+  GymMembershipPlanEntity,
+  GymMemberEntity,
+  GymSubscriptionEntity,
+  GymPaymentEntity,
+  GymCheckinEntity,
+  GymAuditLogEntity,
 ];
 
-export const DATABASE_MIGRATIONS = [InitialSchema1764000000000, AddUserDisabledAt1765000000000];
+export const DATABASE_MIGRATIONS = [
+  InitialSchema1764000000000,
+  AddUserDisabledAt1765000000000,
+  AddGymManagement1766000000000,
+];
 
 export function buildDataSourceOptions(databaseUrl?: string): DataSourceOptions {
   const url =

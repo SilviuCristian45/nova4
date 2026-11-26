@@ -30,3 +30,13 @@ export { MealPlanDayEntity } from "./meal-plan-day.entity";
 export { MealPlanMealEntity } from "./meal-plan-meal.entity";
 export { MealPlanItemEntity } from "./meal-plan-item.entity";
 export { GoogleDriveBackupEntity } from "./google-drive-backup.entity";
+export {
+  GymAuditLogEntity,
+  GymCheckinEntity,
+  GymEntity,
+  GymMemberEntity,
+  GymMembershipPlanEntity,
+  GymPaymentEntity,
+  GymStaffEntity,
+  GymSubscriptionEntity,
+} from "./gym.entity";

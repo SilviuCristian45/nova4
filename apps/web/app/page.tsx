@@ -6,9 +6,10 @@ import { pickNextProgramWorkout } from "@/lib/coach/programs";
 import { mondayOfWeek } from "@/lib/coach/interactions";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Award, ChevronRight, ClipboardCheck, ClipboardList, Play, Settings, Shield, Utensils } from "lucide-react";
+import { Award, Building2, ChevronRight, ClipboardCheck, ClipboardList, Play, QrCode, Settings, Shield, Utensils } from "lucide-react";
 import { SignOutButton } from "./components/sign-out-button";
 import { getSessionUser, serverApi } from "@/lib/api/server";
+import type { ApiMyGymsResponse } from "@/lib/api/gym-types";
 import { getDailySteps } from "./steps/steps";
 import StepsInput from "./components/steps-input";
 import WeightInput from "./components/weight-input";
@@ -109,7 +110,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const today = localDate();
   const weekStart = mondayOfWeek(today);
 
-  const [workoutsRes, authRole, todaySteps, todayGoal, activeProgramRes, weeklyCheckins, activeMealPlans] =
+  const [workoutsRes, authRole, todaySteps, todayGoal, activeProgramRes, weeklyCheckins, activeMealPlans, gymMy] =
     await Promise.all([
       serverApi<ApiWorkoutList>("/workouts?limit=500").catch(() => ({ items: [], total: 0 })),
       getCurrentAuthRole(),
@@ -121,12 +122,15 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       })),
       serverApi<ApiWeeklyCheckin[]>("/checkins/weekly").catch(() => []),
       serverApi<ApiMealPlanSummary[]>("/meals/plan").catch(() => []),
+      serverApi<ApiMyGymsResponse>("/gym/my").catch(() => ({ memberships: [], staffGyms: [] })),
     ]);
 
   const streak = calculateWeeklyStreak(workoutsRes.items);
   const totalSessions = workoutsRes.total ?? workoutsRes.items.length;
   const name = authRole?.displayName?.trim();
   const isCoach = authRole?.role === "coach";
+  const hasGymStaff = gymMy.staffGyms.length > 0;
+  const primaryGymMembership = gymMy.memberships[0] ?? null;
   const hasActiveCoach = activeProgramRes.hasActiveCoach;
   const weeklyCheckinRow = weeklyCheckins.find((c) => c.weekStart === weekStart) ?? null;
   const activeMealPlanRow = activeMealPlans[0] ?? null;
@@ -197,6 +201,12 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
               <Text ro="Admin" en="Admin" />
             </Link>
           )}
+          {hasGymStaff && (
+            <Link href="/gym/manage" className={buttonClass({ variant: "soft", tone: "coral", small: true })}>
+              <Building2 className="size-4" />
+              <Text ro="Sală" en="Gym" />
+            </Link>
+          )}
           {isCoach && (
             <Link href="/coach" className={buttonClass({ variant: "soft", tone: "lime", small: true })}>
               <Award className="size-4" />
@@ -239,6 +249,40 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             label={t("Antrenament nou", "New workout")}
             title={t("Începe antrenamentul", "Start workout")}
           />
+          {primaryGymMembership && (
+            <Card>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="flex flex-col gap-0.5">
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-coral-text">
+                    <Building2 className="size-3.5" />
+                    <Text ro="Acces sală" en="Gym pass" />
+                  </span>
+                  <h2 className="text-[18px] font-semibold tracking-[-0.3px]">{primaryGymMembership.gymName}</h2>
+                  <p className="text-xs text-muted">
+                    {primaryGymMembership.subscription
+                      ? primaryGymMembership.subscription.planType === "session_pack"
+                        ? `${primaryGymMembership.subscription.planName} · ${primaryGymMembership.subscription.sessionsRemaining ?? 0} ${t("ședințe rămase", "sessions left")}`
+                        : `${primaryGymMembership.subscription.planName} · ${primaryGymMembership.subscription.daysLeft ?? 0} ${t("zile rămase", "days left")}`
+                      : t("Fără abonament activ", "No active subscription")}
+                  </p>
+                </div>
+                <Badge tone={primaryGymMembership.subscription?.status === "active" ? "lime" : "red"}>
+                  {primaryGymMembership.subscription?.status === "active"
+                    ? t("Activ", "Active")
+                    : t("Inactiv", "Inactive")}
+                </Badge>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Link href="/gym/scan" className={buttonClass({ small: true })}>
+                  <QrCode className="size-4" />
+                  <Text ro="Check-in QR" en="QR Check-in" />
+                </Link>
+                <Link href="/gym" className={buttonClass({ variant: "secondary", small: true })}>
+                  <Text ro="Detalii abonament" en="Pass details" />
+                </Link>
+              </div>
+            </Card>
+          )}
           {assignedProgram && (
             <Card>
               <div className="flex flex-wrap items-start justify-between gap-2">
@@ -397,6 +441,11 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         <Stack>
           <LinkList
             items={[
+              {
+                href: "/gym",
+                title: t("Sală & Check-in QR", "Gym & QR Check-in"),
+                subtitle: t("Abonamentul tău și scanare intrare", "Your membership pass and QR check-in"),
+              },
               {
                 href: "/explore",
                 title: t("Programe & Antrenori", "Programs & Coaches"),

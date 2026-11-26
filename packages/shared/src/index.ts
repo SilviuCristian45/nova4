@@ -35,3 +35,7 @@ export * from "./offline/model.ts";
 export * from "./offline/errors.ts";
 export * from "./offline/messages.ts";
 export * from "./offline/rejected.ts";
+
+export * from "./gym/types.ts";
+export * from "./gym/checkin-rules.ts";
+export * from "./gym/qr-svg.ts";

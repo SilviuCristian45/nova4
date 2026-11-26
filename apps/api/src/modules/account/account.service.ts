@@ -59,6 +59,9 @@ export interface ReplogExportV1 {
   workout_feedback: Record<string, unknown>[];
   notifications: Record<string, unknown>[];
   meal_plans: Record<string, unknown>[];
+  gym_memberships: Record<string, unknown>[];
+  gym_subscriptions: Record<string, unknown>[];
+  gym_checkins: Record<string, unknown>[];
   google_drive_backup: { email: string | null; frequency: string; last_backup_at: string | null } | null;
 }
 
@@ -120,6 +123,9 @@ export class AccountService {
       workoutFeedback,
       notifications,
       assignedMealPlans,
+      gymMemberships,
+      gymSubscriptions,
+      gymCheckins,
       driveBackup,
     ] = await Promise.all([
       this.dataSource.query(`SELECT * FROM public.profiles WHERE id = $1`, [userId]),
@@ -149,6 +155,31 @@ export class AccountService {
       this.dataSource.query(`SELECT * FROM public.workout_feedback WHERE author_id = $1 ORDER BY created_at ASC`, [userId]),
       this.dataSource.query(`SELECT * FROM public.notifications WHERE user_id = $1 ORDER BY created_at ASC`, [userId]),
       this.dataSource.query(`SELECT * FROM public.meal_plans WHERE assigned_client_id = $1 ORDER BY created_at ASC`, [userId]),
+      // Never expose gym qr_token or staff notes; export only the member's own gym records.
+      this.dataSource.query(
+        `SELECT gm.id, gm.gym_id, g.name AS gym_name, gm.member_code, gm.phone, gm.emergency_contact, gm.status, gm.joined_at
+         FROM public.gym_members gm
+         JOIN public.gyms g ON g.id = gm.gym_id
+         WHERE gm.user_id = $1
+         ORDER BY gm.joined_at ASC`,
+        [userId],
+      ),
+      this.dataSource.query(
+        `SELECT id, gym_id, member_id, plan_name_snapshot, plan_type, status, starts_at, ends_at,
+                sessions_total, sessions_remaining, allowed_from_time, allowed_to_time,
+                allowed_days_mask, frozen_at, frozen_until, total_frozen_days, created_at
+         FROM public.gym_subscriptions
+         WHERE user_id = $1
+         ORDER BY created_at ASC`,
+        [userId],
+      ),
+      this.dataSource.query(
+        `SELECT id, gym_id, subscription_id, checked_in_at, checked_out_at, method, outcome, sessions_after
+         FROM public.gym_checkins
+         WHERE user_id = $1
+         ORDER BY checked_in_at ASC`,
+        [userId],
+      ),
       this.driveBackupsRepo.findOne({ where: { userId } }),
     ]);
 
@@ -197,6 +228,9 @@ export class AccountService {
       workout_feedback: workoutFeedback,
       notifications,
       meal_plans: sanitizedMealPlans,
+      gym_memberships: gymMemberships,
+      gym_subscriptions: gymSubscriptions,
+      gym_checkins: gymCheckins,
       google_drive_backup: driveBackup
         ? {
             email: driveBackup.email ?? null,
@@ -585,6 +619,11 @@ export class AccountService {
       await manager.query(`DELETE FROM public.notifications WHERE user_id = $1`, [userId]);
       await manager.query(`DELETE FROM public.weekly_checkins WHERE client_id = $1`, [userId]);
       await manager.query(`DELETE FROM public.workout_feedback WHERE author_id = $1`, [userId]);
+      // GDPR: anonymize payment user_id (preserve gym accounting ledger) and remove personal gym records.
+      await manager.query(`UPDATE public.gym_payments SET user_id = NULL WHERE user_id = $1`, [userId]);
+      await manager.query(`DELETE FROM public.gym_checkins WHERE user_id = $1`, [userId]);
+      await manager.query(`DELETE FROM public.gym_subscriptions WHERE user_id = $1`, [userId]);
+      await manager.query(`DELETE FROM public.gym_members WHERE user_id = $1`, [userId]);
     });
 
     return { success: true };

@@ -1,15 +1,21 @@
 "use client"
 
 import { Text } from "@/app/components/language-provider"
-import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { Suspense, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Dumbbell } from "lucide-react"
 import { Button, Card, CardTitle, Field, Input, Message } from "@/app/components/ui"
 import { loginUser } from "./action"
 
-export default function LoginPage() {
+function safeNextPath(raw: string | null): string {
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/"
+  return raw
+}
+
+function LoginForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [error, setError] = useState<string | null>(null)
   const [isPending, setIsPending] = useState(false)
 
@@ -23,7 +29,7 @@ export default function LoginPage() {
       setError(result.error)
       setIsPending(false)
     } else {
-      router.push("/")
+      router.push(safeNextPath(searchParams.get("next")))
     }
   }
 
@@ -64,5 +70,13 @@ export default function LoginPage() {
         </Link>
       </p>
     </main>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   )
 }

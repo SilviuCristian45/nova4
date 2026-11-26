@@ -264,5 +264,38 @@ export function formatNotification(
         tone: "ice",
       };
     }
+
+    case "gym_subscription_expiring": {
+      const gymName = str(p, "gym_name") || t("sală", "your gym");
+      const planName = str(p, "plan_name");
+      const daysLeft = typeof p.days_left === "number" ? p.days_left : null;
+      return {
+        title: t("Abonamentul la sală expiră curând", "Gym membership expiring soon"),
+        body:
+          daysLeft !== null
+            ? t(
+                `Abonamentul ${planName ? `„${planName}” ` : ""}la ${gymName} expiră în ${daysLeft} ${daysLeft === 1 ? "zi" : "zile"}.`,
+                `Your ${planName ? `"${planName}" ` : ""}membership at ${gymName} expires in ${daysLeft} ${daysLeft === 1 ? "day" : "days"}.`,
+              )
+            : t(
+                `Abonamentul tău la ${gymName} expiră în curând.`,
+                `Your membership at ${gymName} is expiring soon.`,
+              ),
+        tone: "gold",
+      };
+    }
+
+    case "gym_subscription_low_sessions": {
+      const gymName = str(p, "gym_name") || t("sală", "your gym");
+      const sessionsLeft = typeof p.sessions_remaining === "number" ? p.sessions_remaining : 1;
+      return {
+        title: t("Ultimele ședințe din abonament", "Low gym sessions remaining"),
+        body: t(
+          `Mai ai ${sessionsLeft} ${sessionsLeft === 1 ? "ședință rămasă" : "ședințe rămase"} la ${gymName}.`,
+          `You have ${sessionsLeft} ${sessionsLeft === 1 ? "session" : "sessions"} left at ${gymName}.`,
+        ),
+        tone: "gold",
+      };
+    }
   }
 }

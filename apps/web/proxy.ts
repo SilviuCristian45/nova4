@@ -126,7 +126,12 @@ export async function proxy(request: NextRequest) {
 
   if (!user && !isAuthPage) {
     const url = request.nextUrl.clone();
+    const nextPath = `${request.nextUrl.pathname}${request.nextUrl.search}`;
     url.pathname = "/login";
+    url.search = "";
+    if (nextPath && nextPath !== "/" && nextPath.startsWith("/") && !nextPath.startsWith("//")) {
+      url.searchParams.set("next", nextPath);
+    }
     return NextResponse.redirect(url);
   }
 

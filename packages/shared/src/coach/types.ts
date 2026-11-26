@@ -30,6 +30,8 @@ export const NOTIFICATION_TYPES = [
   "client_pr",
   "meal_plan_assigned",
   "meal_plan_updated",
+  "gym_subscription_expiring",
+  "gym_subscription_low_sessions",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
