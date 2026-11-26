@@ -65,7 +65,14 @@ jobs:
         run: npm run build:shared
 
       - name: Start Postgres 17 + MinIO via docker-compose.dev.yml
-        run: docker compose -f docker-compose.dev.yml up -d --wait postgres minio
+        run: |
+          docker compose -f docker-compose.dev.yml up -d --wait postgres minio
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:9000/minio/health/live && exit 0
+            sleep 1
+          done
+          echo "MinIO did not become ready in time" >&2
+          exit 1
 
       - name: Run NestJS E2E test suites
         env:
