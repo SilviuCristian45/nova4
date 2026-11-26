@@ -75,10 +75,10 @@ nova4/
 │   │   │   ├── main.ts         # Bootstrap, PORT, SWAGGER_ENABLED
 │   │   │   ├── app.setup.ts    # Global prefix /api/v1, helmet, cookie-parser, CORS, ValidationPipe, trust proxy
 │   │   │   ├── app.module.ts   # Config, Schedule, Throttler, TypeORM, global Guards + 14 feature modules
-│   │   │   ├── common/         # JwtAuthGuard, CoachGuard, ActiveCoachAccessGuard, @Public, @CurrentUser
+│   │   │   ├── common/         # JwtAuthGuard, CoachGuard, ActiveCoachAccessGuard, SuperAdminGuard, @Public, @CurrentUser
 │   │   │   ├── database/       # data-source.ts, 32 TypeORM entities, migrations/
 │   │   │   ├── storage/        # StorageService (@aws-sdk/client-s3, auto-create buckets, presigned URLs)
-│   │   │   └── modules/        # account, auth, coach, drive, foods, health, meal-plans, meals,
+│   │   │   └── modules/        # account, admin, auth, coach, drive, foods, health, meal-plans, meals,
 │   │   │                       # metrics, notifications, offline, photos, profiles, workouts
 │   │   └── test/               # E2E integration tests (phase1, phase2, phase3)
 │   └── web/                    # @replog/web — Frontend Next.js 16 + React 19 + Tailwind 4 + PWA
@@ -136,7 +136,7 @@ sequenceDiagram
 
 ### Rute publice vs. protejate
 - **În NestJS (`apps/api`)**: `JwtAuthGuard` și `ThrottlerGuard` sunt înregistrate **global** în `AppModule`. Orice rută este protejată implicit; rutele publice se marchează explicit cu `@Public()` (ex: `/health`, `/auth/login`, `/auth/register`, `/auth/refresh`, `/auth/logout`, `/public/meal-plans/:token`, `/drive/cron`).
-- **În Next.js (`apps/web/proxy.ts`)**: rutele publice fără redirect sunt `/offline`, `/privacy`, `/plan/[token]`, `/login`, `/register`, `/api/v1/*`, `/sw.js`, `/manifest.json` și scripturile workbox. Rutele `/coach/*` verifică în plus rolul `coach`.
+- **În Next.js (`apps/web/proxy.ts`)**: rutele publice fără redirect sunt `/offline`, `/privacy`, `/plan/[token]`, `/login`, `/register`, `/api/v1/*`, `/sw.js`, `/manifest.json` și scripturile workbox. Rutele `/coach/*` verifică rolul `coach`, iar `/admin/*` verifică `user.isSuperAdmin` (configurat din `SUPER_ADMIN_EMAILS`).
 
 ---
 
@@ -149,7 +149,8 @@ Deoarece Postgres nu mai folosește RLS/PostgREST, autorizarea este implementat�
 3. **`ActiveCoachAccessGuard`** (`apps/api/src/common/guards/active-coach-access.guard.ts`): folosit pe rutele `/api/v1/coach/clients/:clientId/*` împreună cu decoratorul `@CoachAccess(...)`:
    - Verifică existența unui `enrollment` cu `status = 'active'` între `coach_id` și `client_id`.
    - Dacă ruta cere date de nutriție (`requireNutrition: true`), verifică în plus `share_nutrition = true`.
-4. **Rute publice cu token**: `/api/v1/public/meal-plans/:token` returnează strict planul alimentar fără niciun PII (fără email-ul clientului sau date private); dacă `share_token` e revocat/inexistent, returnează `404`.
+4. **`SuperAdminGuard`** (`apps/api/src/common/guards/super-admin.guard.ts`): protejează `/api/v1/admin/*` verificând email-ul curent din DB față de allowlist-ul `SUPER_ADMIN_EMAILS` din `.env` (fail-closed când variabila e goală). Conturile cu `users.disabled_at IS NOT NULL` sunt respinse imediat în `JwtAuthGuard` și `AuthService`.
+5. **Rute publice cu token**: `/api/v1/public/meal-plans/:token` returnează strict planul alimentar fără niciun PII (fără email-ul clientului sau date private); dacă `share_token` e revocat/inexistent, returnează `404`.
 
 ---
 
