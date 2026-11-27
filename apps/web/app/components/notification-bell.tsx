@@ -9,7 +9,7 @@ import { useLanguage } from "@/app/components/language-provider";
 const HIDDEN_PATHS = ["/login", "/register", "/offline", "/privacy"];
 export const NOTIFICATIONS_UPDATED_EVENT = "replog:notifications-updated";
 
-export function NotificationBell({ initialUnread }: { initialUnread: number }) {
+export function NotificationBell({ initialUnread, compact = false }: { initialUnread: number; compact?: boolean }) {
   const { t } = useLanguage();
   const pathname = usePathname();
   const [unread, setUnread] = useState(initialUnread);
@@ -65,11 +65,15 @@ export function NotificationBell({ initialUnread }: { initialUnread: number }) {
       href="/notifications"
       aria-label={label}
       title={label}
-      className="relative inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-control text-soft transition-opacity active:opacity-60"
+      className={
+        compact
+          ? "relative inline-flex size-9 shrink-0 items-center justify-center rounded-md text-soft transition-colors hover:bg-control hover:text-foreground"
+          : "relative inline-flex size-10 shrink-0 items-center justify-center rounded-md bg-control text-soft transition-colors hover:text-foreground active:opacity-60"
+      }
     >
       <Bell className="size-[18px]" />
       {unread > 0 && (
-        <span className="absolute -right-0.5 -top-0.5 flex min-w-[18px] items-center justify-center rounded-full bg-coral px-1 text-[10px] font-bold leading-[18px] text-on-solid tabular-nums">
+        <span className="absolute right-0.5 top-0.5 flex min-w-[16px] items-center justify-center rounded-full bg-coral px-1 font-mono text-[9.5px] font-bold leading-[16px] text-on-solid tabular-nums">
           {badgeText}
         </span>
       )}

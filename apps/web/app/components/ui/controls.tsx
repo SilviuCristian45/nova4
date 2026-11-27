@@ -67,18 +67,18 @@ export function Segmented<T extends string>({ value, options, onChange, inCard, 
   inCard?: boolean; label?: string; className?: string;
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className={cx("flex flex-wrap gap-1 rounded-full p-1", inCard ? "bg-inner" : "bg-card", className)}>
+    <div role="radiogroup" aria-label={label} className={cx("flex flex-wrap gap-1 rounded-md border border-card-border p-1", inCard ? "bg-inner" : "bg-card", className)}>
       {options.map((option) => {
         const active = option.value === value;
         const Icon = option.icon;
         return (
           <button key={option.value} type="button" role="radio" aria-checked={active} onClick={() => onChange(option.value)}
             className={cx(
-              "flex min-h-11 grow items-center justify-center gap-1.5 rounded-full px-2.5 text-sm font-semibold whitespace-nowrap transition-colors",
+              "flex min-h-9 grow items-center justify-center gap-1.5 rounded-sm px-2.5 text-[13px] font-semibold whitespace-nowrap transition-colors",
               options.length > 4 ? "basis-[22%]" : "basis-0",
-              active ? "bg-lime text-on-solid" : "text-muted",
+              active ? "bg-lime text-on-solid" : "text-muted hover:text-foreground",
             )}>
-            {Icon && <Icon className="size-4" />}
+            {Icon && <Icon className="size-3.5" />}
             {option.label}
           </button>
         );
@@ -135,7 +135,7 @@ export function Select({ value, defaultValue, options, onChange, name, title, pl
         {searchable ? <Search className="size-4 shrink-0 text-muted" /> : <ChevronDown className="size-4 shrink-0 text-muted" />}
       </button>
       <dialog ref={dialog} aria-labelledby={titleId}
-        className="fixed inset-x-0 bottom-0 top-auto m-0 mx-auto hidden max-h-[85vh] w-full max-w-xl flex-col rounded-t-xl bg-background p-0 text-foreground backdrop:bg-[#000000a6] open:flex sm:top-1/2 sm:bottom-auto sm:-translate-y-1/2 sm:rounded-xl">
+        className="fixed inset-x-0 bottom-0 top-auto m-0 mx-auto hidden max-h-[85vh] w-full max-w-xl flex-col rounded-t-xl border border-card-border bg-card p-0 text-foreground backdrop:bg-[#000000a6] backdrop:backdrop-blur-xs open:flex sm:top-1/2 sm:bottom-auto sm:-translate-y-1/2 sm:rounded-xl">
         <div className="flex items-center gap-2 p-4">
           <h2 id={titleId} className="flex-1 text-[17px] font-bold">{title ?? placeholder ?? ""}</h2>
           <IconButton icon={X} label={t("Închide", "Close")} onClick={() => dialog.current?.close()} />
@@ -151,8 +151,8 @@ export function Select({ value, defaultValue, options, onChange, name, title, pl
             const isSelected = option.value === current;
             return (
               <button key={option.value} type="button" role="option" aria-selected={isSelected} onClick={() => choose(option.value)}
-                className={cx("flex min-h-12 w-full items-center gap-2 rounded-sm px-3 text-left transition-colors",
-                  isSelected ? "bg-lime-soft text-lime-text" : "active:bg-inner")}>
+                className={cx("flex min-h-11 w-full items-center gap-2 rounded-sm px-3 text-left transition-colors",
+                  isSelected ? "bg-lime-soft text-lime-text" : "hover:bg-inner active:bg-inner")}>
                 <span className="flex flex-1 flex-col py-2">
                   <span className={isSelected ? "font-bold" : ""}>{option.label}</span>
                   {option.subtitle && <span className="text-xs text-muted">{option.subtitle}</span>}

@@ -7,7 +7,7 @@ import { lockOfflineAccount } from "@/lib/offline/store";
 import { useLanguage } from "./language-provider";
 import { iconButtonClass } from "./ui";
 
-export function SignOutButton() {
+export function SignOutButton({ compact = false }: { compact?: boolean }) {
   const { t } = useLanguage();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,9 +26,19 @@ export function SignOutButton() {
   }
   return (
     <div className="flex flex-col items-end gap-1">
-      <button type="button" disabled={pending} onClick={() => void signOut()} aria-label={t("Deconectare", "Sign out")}
-        title={t("Deconectare", "Sign out")} className={iconButtonClass()}>
-        <LogOut className="size-5" />
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => void signOut()}
+        aria-label={t("Deconectare", "Sign out")}
+        title={t("Deconectare", "Sign out")}
+        className={
+          compact
+            ? "inline-flex size-9 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-red-soft hover:text-red-text disabled:opacity-40"
+            : iconButtonClass()
+        }
+      >
+        <LogOut className={compact ? "size-[17px]" : "size-5"} />
       </button>
       {error && <p role="alert" className="max-w-52 text-xs font-semibold text-red-text">{error}</p>}
     </div>

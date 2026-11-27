@@ -47,14 +47,28 @@ export function Text({ ro, en }: { ro: string; en: string }) {
   return useLanguage().t(ro, en);
 }
 
-export function LanguageSelector() {
+export function LanguageSelector({ compact = false }: { compact?: boolean }) {
   const { language, setLanguage, t } = useLanguage();
+  if (compact) {
+    const next: Language = language === "ro" ? "en" : "ro";
+    return (
+      <button
+        type="button"
+        onClick={() => setLanguage(next)}
+        aria-label={t("Schimbă limba în engleză", "Switch language to Romanian")}
+        title={t("Limbă: Română (click pentru EN)", "Language: English (click for RO)")}
+        className="inline-flex h-9 items-center justify-center rounded-md px-2 font-mono text-[11px] font-semibold uppercase tracking-[0.04em] text-soft transition-colors hover:bg-control hover:text-foreground"
+      >
+        {language}
+      </button>
+    );
+  }
   return (
     <select
       aria-label={t("Limba interfeței", "Interface language")}
       value={language}
       onChange={(event) => setLanguage(event.target.value as Language)}
-      className="h-11 appearance-none rounded-full bg-control px-4 text-sm font-semibold text-soft"
+      className="h-10 appearance-none rounded-md border border-card-border bg-control px-3.5 text-sm font-semibold text-soft transition-colors hover:text-foreground"
     >
       <option value="en">English</option>
       <option value="ro">Română</option>

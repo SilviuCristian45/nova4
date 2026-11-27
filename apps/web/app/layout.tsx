@@ -1,28 +1,29 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { JetBrains_Mono, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "./components/theme-provider";
-import { ThemeToggle } from "./components/theme-toggle";
-import { LanguageProvider, LanguageSelector } from "./components/language-provider";
+import { LanguageProvider } from "./components/language-provider";
 import { getLanguage } from "./language";
 import { getWeightUnit } from "./units";
 import { UnitsProvider } from "./components/units-provider";
 import { OfflineProvider } from "@/lib/offline/client";
-import { OfflineStatus } from "./components/offline-status";
 import { DriveAutoSync } from "./components/drive-auto-sync";
-import { NotificationBell } from "./components/notification-bell";
 import { ExerciseGifProvider } from "./components/exercise-gif";
+import { AppShell } from "./components/app-shell";
 import { getSessionUser, serverApi } from "@/lib/api/server";
-import { pageWidth } from "./components/ui";
+import { getCurrentAuthRole } from "@/lib/coach/auth";
+import type { ApiMyGymsResponse } from "@/lib/api/gym-types";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
+const jakarta = Plus_Jakarta_Sans({
+  variable: "--font-jakarta",
+  subsets: ["latin", "latin-ext"],
+  weight: ["400", "500", "600", "700", "800"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
 });
 
 export const viewport: Viewport = {
@@ -37,13 +38,19 @@ export const viewport: Viewport = {
 export async function generateMetadata(): Promise<Metadata> {
   const { t } = await getLanguage();
   return {
-    title: "Workout Tracker Pro",
-    description: t("Monitorizarea activității fizice, nutriției și antrenamentelor", "Fitness, nutrition and workout tracking"),
+    title: {
+      default: "RepLog",
+      template: "%s · RepLog",
+    },
+    description: t(
+      "Monitorizarea antrenamentelor, nutriției, progresului și coaching-ului",
+      "Training, nutrition, progress and coaching operating system",
+    ),
     manifest: "/manifest.json",
     appleWebApp: {
       capable: true,
       statusBarStyle: "default",
-      title: t("Antrenamente", "Workouts"),
+      title: "RepLog",
     },
   };
 }
@@ -58,12 +65,27 @@ export default async function RootLayout({
 
   let initialUnread = 0;
   let signedIn = false;
+  let userName: string | null = null;
+  let userEmail: string | null = null;
+  let isCoach = false;
+  let hasGymStaff = false;
+  let isSuperAdmin = false;
+
   try {
     const user = await getSessionUser();
     if (user) {
       signedIn = true;
-      const unreadRes = await serverApi<{ count: number }>("/notifications/unread");
+      userEmail = user.email ?? null;
+      isSuperAdmin = Boolean(user.isSuperAdmin);
+      const [authRole, unreadRes, gymMy] = await Promise.all([
+        getCurrentAuthRole().catch(() => null),
+        serverApi<{ count: number }>("/notifications/unread").catch(() => ({ count: 0 })),
+        serverApi<ApiMyGymsResponse>("/gym/my").catch(() => ({ memberships: [], staffGyms: [] })),
+      ]);
+      userName = authRole?.displayName?.trim() || null;
+      isCoach = authRole?.role === "coach";
       initialUnread = unreadRes.count ?? 0;
+      hasGymStaff = (gymMy.staffGyms?.length ?? 0) > 0;
     }
   } catch {
     // Gracefully skip if unauthenticated or offline shell.
@@ -73,9 +95,9 @@ export default async function RootLayout({
     <html
       lang={language}
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${jakarta.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
+      <body className="min-h-full">
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
@@ -84,18 +106,22 @@ export default async function RootLayout({
         >
           <LanguageProvider initialLanguage={language}>
             <UnitsProvider initialUnit={weightUnit}>
-            <OfflineProvider>
-            <ExerciseGifProvider>
-            <div className={`${pageWidth} no-print flex items-center justify-end gap-2 px-5 pt-3 lg:px-8`}>
-              {signedIn && <NotificationBell initialUnread={initialUnread} />}
-              <LanguageSelector />
-              <ThemeToggle />
-            </div>
-            <OfflineStatus />
-            {signedIn && <DriveAutoSync />}
-            {children}
-            </ExerciseGifProvider>
-            </OfflineProvider>
+              <OfflineProvider>
+                <ExerciseGifProvider>
+                  {signedIn && <DriveAutoSync />}
+                  <AppShell
+                    signedIn={signedIn}
+                    userName={userName}
+                    userEmail={userEmail}
+                    isCoach={isCoach}
+                    hasGymStaff={hasGymStaff}
+                    isSuperAdmin={isSuperAdmin}
+                    initialUnread={initialUnread}
+                  >
+                    {children}
+                  </AppShell>
+                </ExerciseGifProvider>
+              </OfflineProvider>
             </UnitsProvider>
           </LanguageProvider>
         </ThemeProvider>

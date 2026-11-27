@@ -8,7 +8,7 @@ import { useLanguage } from "./language-provider";
 import { saveOfflineMutation, useOffline } from "@/lib/offline/client";
 import { readOfflineDatabase } from "@/lib/offline/store";
 import { useUnits } from "./units-provider";
-import { Card, Label, TextLink, buttonClass, inputClass } from "./ui";
+import { Card, Eyebrow, TextLink, buttonClass } from "./ui";
 
 const subscribeToDate = () => () => {};
 const serverDate = () => "";
@@ -73,8 +73,7 @@ export default function WeightInput() {
         if (!result.success) {
           setError(result.error);
           setLoadFailed(true);
-        }
-        else {
+        } else {
           setSavedWeight(result.weight);
           setWeight(result.weight === null ? "" : String(toUnit(result.weight)));
         }
@@ -128,43 +127,88 @@ export default function WeightInput() {
   }
 
   return (
-    <Card aria-labelledby="body-weight-title">
-      <div className="flex items-center justify-between gap-3">
-        <Label id="body-weight-title" htmlFor="body-weight">{t("Greutate corporală", "Body weight")}</Label>
-        <TextLink href="/stats?mode=weight">{t("Grafic", "Chart")}</TextLink>
+    <Card aria-labelledby="body-weight-title" className="justify-between">
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-2">
+          <label id="body-weight-title" htmlFor="body-weight">
+            <Eyebrow>{t("Greutate corporală", "Body weight")}</Eyebrow>
+          </label>
+          <TextLink href="/stats?mode=weight">{t("Grafic", "Chart")}</TextLink>
+        </div>
+
+        <form action={submit} className="flex flex-col gap-3">
+          <div className="flex items-baseline gap-2">
+            <input
+              id="body-weight"
+              name="weight"
+              type="text"
+              inputMode="decimal"
+              required
+              autoComplete="off"
+              value={weight}
+              placeholder={unit === "lb" ? "165.0" : "75.5"}
+              aria-label={t(`Greutate (${unit})`, `Weight (${unit})`)}
+              disabled={pending || isLoading || blocked}
+              onChange={(event) => {
+                setWeight(event.target.value);
+                setSaved(false);
+                if (error === "invalid-weight") setError(null);
+              }}
+              className="w-0 min-w-0 flex-1 bg-transparent p-0 text-[36px] font-bold leading-none tracking-[-0.04em] tabular-nums outline-none focus-visible:outline-none disabled:opacity-50 sm:text-[38px]"
+            />
+            <span className="font-mono text-[13px] font-medium text-muted">{unit}</span>
+          </div>
+
+          <div className="flex items-center justify-between gap-2">
+            <input
+              id="weight-date"
+              name="date"
+              type="date"
+              required
+              value={date}
+              aria-label={t("Data", "Date")}
+              min="0001-01-01"
+              max={today || undefined}
+              disabled={pending}
+              onChange={(event) => setSelectedDate(event.target.value)}
+              className="h-9 min-w-0 flex-1 rounded-sm border border-card-border bg-inner px-2.5 font-mono text-[12px] text-soft outline-none transition-colors hover:border-card-border-strong focus:border-lime focus:text-foreground disabled:opacity-50"
+            />
+            {changed && !blocked && (
+              <button type="submit" disabled={pending || isLoading} className={buttonClass({ small: true })}>
+                {pending && <Loader2 className="size-3.5 animate-spin" />}
+                {t("Salvează", "Save")}
+              </button>
+            )}
+          </div>
+        </form>
       </div>
-      <form action={submit} className="flex flex-col gap-3.5">
-        <div className="flex items-baseline gap-2">
-          <input id="body-weight" name="weight" type="text" inputMode="decimal" required
-            autoComplete="off" value={weight} placeholder={unit === "lb" ? "165" : "75.5"}
-            aria-label={t(`Greutate (${unit})`, `Weight (${unit})`)}
-            disabled={pending || isLoading || blocked}
-            onChange={(event) => { setWeight(event.target.value); setSaved(false); if (error === "invalid-weight") setError(null); }}
-            className="w-0 min-w-0 flex-1 bg-transparent p-0 text-[44px] font-bold leading-none tracking-[-1.5px] tabular-nums outline-none focus-visible:outline-none disabled:opacity-50" />
-          <span className="text-[15px] text-muted">{unit}</span>
-        </div>
-        <div className="flex items-center gap-2.5">
-          <input id="weight-date" name="date" type="date" required value={date}
-            aria-label={t("Data", "Date")}
-            min="0001-01-01" max={today || undefined} disabled={pending}
-            onChange={(event) => setSelectedDate(event.target.value)}
-            className={inputClass({ className: "flex-1" })} />
-          {changed && !blocked && (
-            <button type="submit" disabled={pending || isLoading} className={buttonClass()}>
-              {pending && <Loader2 className="size-[18px] animate-spin" />}
-              {t("Salvează", "Save")}
-            </button>
-          )}
-        </div>
-      </form>
-      {isLoading && <p role="status" className="text-[13px] text-muted">{t("Se încarcă...", "Loading...")}</p>}
-      {!isLoading && !error && savedWeight === null && !weight && <p className="text-[13px] text-muted">{t(`Nicio cântărire pentru această zi. Introdu valoarea în ${unit}.`, `No weigh-in for this day. Enter your weight in ${unit}.`)}</p>}
-      {weight && parsedWeight === null && <p className="text-[13px] text-red-text">{errorText("invalid-weight")}</p>}
-      {saved && <p role="status" className="text-[13px] font-semibold text-lime-text">{ownerId ? t("Salvat pe dispozitiv; verifică starea sincronizării.", "Saved to device; check sync status.") : t("Greutatea a fost salvată.", "Weight saved.")}</p>}
-      {error && <div role="alert" className="text-[13px] font-semibold text-red-text">
-        <p>{errorText(error)}</p>
-        {loadFailed && <button type="button" onClick={() => setRetry((value) => value + 1)} className="mt-2 font-bold underline">{t("Reîncearcă", "Retry")}</button>}
-      </div>}
+
+      <div className="flex flex-col gap-1">
+        {isLoading && <p role="status" className="font-mono text-[11px] text-muted">{t("Se încarcă...", "Loading...")}</p>}
+        {!isLoading && !error && savedWeight === null && !weight && (
+          <p className="text-[12px] text-muted">
+            {t(`Nicio cântărire azi. Introdu valoarea în ${unit}.`, `No weigh-in today. Enter value in ${unit}.`)}
+          </p>
+        )}
+        {weight && parsedWeight === null && <p className="text-[12px] font-medium text-red-text">{errorText("invalid-weight")}</p>}
+        {saved && (
+          <p role="status" className="text-[12px] font-semibold text-lime-text">
+            {ownerId
+              ? t("Salvat local; sincronizare în așteptare.", "Saved locally; pending sync.")
+              : t("Greutatea a fost salvată.", "Weight saved.")}
+          </p>
+        )}
+        {error && (
+          <div role="alert" className="text-[12px] font-semibold text-red-text">
+            <p>{errorText(error)}</p>
+            {loadFailed && (
+              <button type="button" onClick={() => setRetry((value) => value + 1)} className="mt-1 underline">
+                {t("Reîncearcă", "Retry")}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     </Card>
   );
 }

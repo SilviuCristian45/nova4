@@ -2,55 +2,67 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* One brand accent (lime) carries every primary action; the other hues are muted and only separate data
-   (set types, macros, chart series, errors). Surfaces are told apart by fill, not by outlines.
-   Each accent has a solid fill, a text colour tuned per theme, and soft/border tints of the solid. */
+/* RepLog Design System Tokens
+   One brand accent (acid lime) carries primary actions; muted hues strictly separate data semantics
+   (set types, macros, chart series, warnings). Surfaces combine subtle fill contrast with hairline
+   borders and theme-tuned elevation (soft ambient shadow in light, specular top highlight in dark). */
 :root {
   color-scheme: light;
   --background: #f5f4ef;
   --card: #ffffff;
   --inner: #efede6;
-  --control: #e8e6de;
-  --border: #0000001a;
+  --control: #e7e5dc;
+  --border: #00000018;
+  --card-border: #0c0c0d14;
+  --card-border-strong: #0c0c0d24;
+  --card-shadow: 0 1px 2px rgba(12, 12, 13, 0.04), 0 10px 28px -18px rgba(12, 12, 13, 0.1);
+  --surface-glass: rgba(245, 244, 239, 0.86);
+  --nav-glass: rgba(255, 255, 255, 0.92);
   --foreground: #0c0c0d;
-  --text-soft: #4a4a4f;
-  --muted: #7a7a80;
-  --placeholder: #a3a3a8;
+  --text-soft: #48484e;
+  --muted: #76767d;
+  --placeholder: #9d9da3;
   --on-solid: #0c0c0d;
 
-  --lime: #c8f031;  --lime-text: #4d6a00;  --lime-soft: #c8f03133;  --lime-border: #c8f03166;
-  --coral: #ff7a59; --coral-text: #c2410c; --coral-soft: #ff7a5933; --coral-border: #ff7a5966;
-  --ice: #7cc4ff;   --ice-text: #1d5f94;   --ice-soft: #7cc4ff33;   --ice-border: #7cc4ff66;
-  --lilac: #b7a4ff; --lilac-text: #5b3fc4; --lilac-soft: #b7a4ff33; --lilac-border: #b7a4ff66;
-  --gold: #ffc233;  --gold-text: #8a5a00;  --gold-soft: #ffc23333;  --gold-border: #ffc23366;
-  --red: #ff5a5f;   --red-text: #c0272d;   --red-soft: #ff5a5f33;   --red-border: #ff5a5f66;
+  --lime: #c8f031;  --lime-hover: #d3f74a;  --lime-text: #486300;  --lime-soft: #c8f0312e;  --lime-border: #c8f03166;
+  --coral: #ff7a59; --coral-text: #c2410c; --coral-soft: #ff7a5928; --coral-border: #ff7a595c;
+  --ice: #7cc4ff;   --ice-text: #1d5f94;   --ice-soft: #7cc4ff28;   --ice-border: #7cc4ff5c;
+  --lilac: #b7a4ff; --lilac-text: #5b3fc4; --lilac-soft: #b7a4ff28; --lilac-border: #b7a4ff5c;
+  --gold: #ffc233;  --gold-text: #8a5a00;  --gold-soft: #ffc23328;  --gold-border: #ffc2335c;
+  --red: #ff5a5f;   --red-text: #c0272d;   --red-soft: #ff5a5f28;   --red-border: #ff5a5f5c;
 
-  --chart-grid: #0000001a;
-  --chart-axis: #7a7a80;
+  --chart-grid: #00000016;
+  --chart-axis: #76767d;
 }
 
 .dark {
   color-scheme: dark;
   --background: #09090b;
-  --card: #151517;
-  --inner: #1e1e21;
-  --control: #26262a;
-  --border: #ffffff17;
+  --card: #121215;
+  --inner: #1b1b20;
+  --control: #24242a;
+  --border: #ffffff14;
+  --card-border: #ffffff14;
+  --card-border-strong: #ffffff24;
+  --card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055), 0 1px 2px rgba(0, 0, 0, 0.45);
+  --surface-glass: rgba(9, 9, 11, 0.84);
+  --nav-glass: rgba(18, 18, 21, 0.92);
   --foreground: #f6f6f4;
-  --text-soft: #b4b4ba;
-  --muted: #85858c;
-  --placeholder: #5c5c63;
+  --text-soft: #b4b4bc;
+  --muted: #82828b;
+  --placeholder: #5a5a63;
   --on-solid: #0c0c0d;
 
-  --lime-text: #c8f031;  --lime-soft: #c8f0311f;  --lime-border: #c8f03140;
-  --coral-text: #ff8f72; --coral-soft: #ff7a591f; --coral-border: #ff7a5940;
-  --ice-text: #8fceff;   --ice-soft: #7cc4ff1f;   --ice-border: #7cc4ff40;
-  --lilac-text: #c6b8ff; --lilac-soft: #b7a4ff1f; --lilac-border: #b7a4ff40;
-  --gold-text: #ffd05c;  --gold-soft: #ffc2331f;  --gold-border: #ffc23340;
-  --red-text: #ff7a7e;   --red-soft: #ff5a5f1f;   --red-border: #ff5a5f40;
+  --lime-hover: #d4f84d;
+  --lime-text: #c8f031;  --lime-soft: #c8f0311a;  --lime-border: #c8f0313d;
+  --coral-text: #ff8f72; --coral-soft: #ff7a591a; --coral-border: #ff7a593d;
+  --ice-text: #8fceff;   --ice-soft: #7cc4ff1a;   --ice-border: #7cc4ff3d;
+  --lilac-text: #c6b8ff; --lilac-soft: #b7a4ff1a; --lilac-border: #b7a4ff3d;
+  --gold-text: #ffd05c;  --gold-soft: #ffc2331a;  --gold-border: #ffc2333d;
+  --red-text: #ff7a7e;   --red-soft: #ff5a5f1a;   --red-border: #ff5a5f3d;
 
-  --chart-grid: #ffffff14;
-  --chart-axis: #85858c;
+  --chart-grid: #ffffff12;
+  --chart-axis: #82828b;
 }
 
 /* Only the palette above: Tailwind's default colours are switched off so a stray `emerald-500` fails loudly. */
@@ -66,32 +78,41 @@
   --color-inner: var(--inner);
   --color-control: var(--control);
   --color-line: var(--border);
+  --color-card-border: var(--card-border);
+  --color-card-border-strong: var(--card-border-strong);
+  --color-surface-glass: var(--surface-glass);
+  --color-nav-glass: var(--nav-glass);
   --color-foreground: var(--foreground);
   --color-soft: var(--text-soft);
   --color-muted: var(--muted);
   --color-placeholder: var(--placeholder);
   --color-on-solid: var(--on-solid);
 
-  --color-lime: var(--lime);   --color-lime-text: var(--lime-text);   --color-lime-soft: var(--lime-soft);   --color-lime-border: var(--lime-border);
+  --color-lime: var(--lime);   --color-lime-hover: var(--lime-hover); --color-lime-text: var(--lime-text);   --color-lime-soft: var(--lime-soft);   --color-lime-border: var(--lime-border);
   --color-coral: var(--coral); --color-coral-text: var(--coral-text); --color-coral-soft: var(--coral-soft); --color-coral-border: var(--coral-border);
   --color-ice: var(--ice);     --color-ice-text: var(--ice-text);     --color-ice-soft: var(--ice-soft);     --color-ice-border: var(--ice-border);
   --color-lilac: var(--lilac); --color-lilac-text: var(--lilac-text); --color-lilac-soft: var(--lilac-soft); --color-lilac-border: var(--lilac-border);
   --color-gold: var(--gold);   --color-gold-text: var(--gold-text);   --color-gold-soft: var(--gold-soft);   --color-gold-border: var(--gold-border);
   --color-red: var(--red);     --color-red-text: var(--red-text);     --color-red-soft: var(--red-soft);     --color-red-border: var(--red-border);
 
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
 
-  --radius-sm: 10px;
-  --radius-md: 14px;
-  --radius-lg: 20px;
-  --radius-xl: 28px;
-
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-jakarta);
+  --font-mono: var(--font-jetbrains-mono);
 }
 
 @layer base {
   * {
     border-color: var(--border);
+  }
+
+  html {
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   button:not(:disabled), a, summary, select {
@@ -100,7 +121,7 @@
 
   :focus-visible {
     outline: 2px solid var(--lime);
-    outline-offset: 3px;
+    outline-offset: 2px;
   }
 
   input::placeholder, textarea::placeholder {
@@ -111,8 +132,13 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
-  font-size: 15px;
+  font-family: var(--font-jakarta), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+
+.surface-card {
+  box-shadow: var(--card-shadow);
 }
 
 @media print {

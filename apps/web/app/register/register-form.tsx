@@ -1,60 +1,63 @@
-"use client"
+"use client";
 
-import { Text, useLanguage } from "@/app/components/language-provider"
-import { useState } from "react"
-import { useRouter } from "next/navigation"
-import Link from "next/link"
-import { Dumbbell } from "lucide-react"
-import { Button, Card, CardTitle, Field, Input, Message, Segmented } from "@/app/components/ui"
-import type { UserRole } from "@/lib/coach/types"
-import { registerUser } from "./actions"
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { BrandMark } from "@/app/components/brand-mark";
+import { Text, useLanguage } from "@/app/components/language-provider";
+import { Button, Card, CardTitle, Eyebrow, Field, Input, Message, Segmented } from "@/app/components/ui";
+import type { UserRole } from "@/lib/coach/types";
+import { registerUser } from "./actions";
 
 export function RegisterForm({ allowCoachSignup }: { allowCoachSignup: boolean }) {
-  const router = useRouter()
-  const { t } = useLanguage()
-  const [role, setRole] = useState<UserRole>("client")
-  const [error, setError] = useState<string | null>(null)
-  const [info, setInfo] = useState<string | null>(null)
-  const [isPending, setIsPending] = useState(false)
+  const router = useRouter();
+  const { t } = useLanguage();
+  const [role, setRole] = useState<UserRole>("client");
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [isPending, setIsPending] = useState(false);
 
   async function handleAction(formData: FormData) {
-    setIsPending(true)
-    setError(null)
-    setInfo(null)
+    setIsPending(true);
+    setError(null);
+    setInfo(null);
 
-    const result = await registerUser(formData)
+    const result = await registerUser(formData);
 
     if (result?.error) {
-      setError(result.error)
-      setIsPending(false)
+      setError(result.error);
+      setIsPending(false);
     } else if (result?.info) {
-      setInfo(result.info)
-      setIsPending(false)
+      setInfo(result.info);
+      setIsPending(false);
     } else {
-      router.push(result?.role === "coach" ? "/coach" : "/")
+      router.push(result?.role === "coach" ? "/coach" : "/");
     }
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-sm flex-col justify-center gap-6 p-5 text-foreground">
-      <div className="flex flex-col gap-1.5">
-        <span className="flex size-11 items-center justify-center rounded-full bg-lime text-on-solid">
-          <Dumbbell className="size-5" />
-        </span>
-        <h1 className="mt-3 text-[36px] font-bold leading-[40px] tracking-[-1.4px]">RepLog</h1>
-        <p className="text-muted">
-          <Text ro="Fiecare set contează. Depășește-te la fiecare sesiune." en="Track every set. Beat every session." />
-        </p>
+    <main className="mx-auto flex w-full max-w-[400px] flex-1 flex-col justify-center gap-6 px-5 py-10 text-foreground">
+      <div className="flex flex-col gap-2">
+        <BrandMark size="lg" />
+        <div className="mt-2 flex flex-col gap-1">
+          <Eyebrow>RepLog OS</Eyebrow>
+          <h1 className="text-[30px] font-bold leading-tight tracking-[-0.035em]">
+            <Text ro="Creează un cont" en="Create an account" />
+          </h1>
+          <p className="text-[13.5px] text-muted">
+            <Text ro="Antrenamente, nutriție și coaching într-un singur loc." en="Training, nutrition, and coaching in one place." />
+          </p>
+        </div>
       </div>
 
       <Card>
-        <CardTitle description={<Text ro="Înregistrează-te pentru a-ți urmări antrenamentele" en="Sign up to log your training" />}>
-          <Text ro="Creează un cont" en="Create an account" />
+        <CardTitle description={<Text ro="Înregistrează-te pentru a începe" en="Sign up to start tracking" />}>
+          <Text ro="Cont nou" en="New account" />
         </CardTitle>
         <form action={handleAction} className="flex flex-col gap-3.5">
           {allowCoachSignup && (
             <div className="flex flex-col gap-1.5">
-              <span className="pl-0.5 text-[13px] font-medium text-muted">
+              <span className="pl-0.5 text-[12.5px] font-medium text-muted">
                 <Text ro="Tip cont" en="Account type" />
               </span>
               <input type="hidden" name="role" value={role} />
@@ -89,18 +92,18 @@ export function RegisterForm({ allowCoachSignup }: { allowCoachSignup: boolean }
           </Field>
           {error && <Message>{error}</Message>}
           {info && <Message tone="lime">{info}</Message>}
-          <Button type="submit" busy={isPending} className="mt-1">
+          <Button type="submit" busy={isPending} className="mt-1 w-full">
             {isPending ? <Text ro="Se creează contul..." en="Creating account..." /> : <Text ro="Înregistrare" en="Sign up" />}
           </Button>
         </form>
       </Card>
 
-      <p className="text-center text-sm text-muted">
+      <p className="text-center text-[13.5px] text-muted">
         <Text ro="Ai deja un cont?" en="Already have an account?" />{" "}
-        <Link href="/login" className="font-semibold text-lime-text">
+        <Link href="/login" className="font-semibold text-lime-text transition-opacity hover:opacity-80">
           <Text ro="Autentificare" en="Sign in" />
         </Link>
       </p>
     </main>
-  )
+  );
 }
