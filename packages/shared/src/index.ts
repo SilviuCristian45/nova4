@@ -4,6 +4,7 @@ export * from "./daily-metrics.ts";
 export * from "./drive-backup.ts";
 export * from "./energy.ts";
 export * from "./exercise-catalog.ts";
+export * from "./exercise-gifs.ts";
 export * from "./fitness.ts";
 export * from "./personal-record.ts";
 export * from "./photos.ts";

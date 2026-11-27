@@ -3,6 +3,7 @@
 import { useId, useState } from "react"
 import { Search } from "lucide-react"
 import { Text, useLanguage } from "@/app/components/language-provider"
+import { ExerciseGifButton } from "@/app/components/exercise-gif"
 import { ExerciseName } from "@/app/components/exercise-name"
 import { exerciseName, matchesExerciseQuery } from "@/lib/exercise-catalog"
 import { nextActiveIndex } from "@/lib/combobox"
@@ -62,33 +63,36 @@ export function ExerciseCombobox({
         <Text ro="Exercițiu / Aparat" en="Exercise / Machine" />
       </label>
 
-      <div className="relative">
-        <input
-          id={id}
-          type="text"
-          role="combobox"
-          aria-expanded={open}
-          aria-controls={listId}
-          aria-autocomplete="list"
-          aria-activedescendant={open && active >= 0 && matches[active] ? optionId(active) : undefined}
-          autoComplete="off"
-          value={open ? query : exerciseName(value, language)}
-          onChange={(e) => {
-            setQuery(e.target.value)
-            setActive(0)
-            setOpen(true)
-          }}
-          onFocus={() => {
-            setQuery("")
-            setActive(-1)
-            setOpen(true)
-          }}
-          onBlur={() => setOpen(false)}
-          onKeyDown={onKeyDown}
-          placeholder={t("Caută exercițiul...", "Search exercises...")}
-          className="min-h-[52px] w-full rounded-md border-[1.5px] border-transparent bg-inner pl-3.5 pr-10 font-medium text-foreground outline-none transition-colors focus:border-lime focus-visible:outline-none"
-        />
-        <Search className="pointer-events-none absolute right-3.5 top-1/2 size-4 -translate-y-1/2 text-muted" aria-hidden="true" />
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <input
+            id={id}
+            type="text"
+            role="combobox"
+            aria-expanded={open}
+            aria-controls={listId}
+            aria-autocomplete="list"
+            aria-activedescendant={open && active >= 0 && matches[active] ? optionId(active) : undefined}
+            autoComplete="off"
+            value={open ? query : exerciseName(value, language)}
+            onChange={(e) => {
+              setQuery(e.target.value)
+              setActive(0)
+              setOpen(true)
+            }}
+            onFocus={() => {
+              setQuery("")
+              setActive(-1)
+              setOpen(true)
+            }}
+            onBlur={() => setOpen(false)}
+            onKeyDown={onKeyDown}
+            placeholder={t("Caută exercițiul...", "Search exercises...")}
+            className="min-h-[52px] w-full rounded-md border-[1.5px] border-transparent bg-inner pl-3.5 pr-10 font-medium text-foreground outline-none transition-colors focus:border-lime focus-visible:outline-none"
+          />
+          <Search className="pointer-events-none absolute right-3.5 top-1/2 size-4 -translate-y-1/2 text-muted" aria-hidden="true" />
+        </div>
+        {value && <ExerciseGifButton exercise={value} className="bg-inner" />}
       </div>
 
       {open && (
@@ -113,7 +117,7 @@ export function ExerciseCombobox({
                   e.preventDefault()
                   choose(ex)
                 }}
-                className={`flex min-h-12 cursor-pointer items-center rounded-sm px-3 transition-colors ${
+                className={`flex min-h-12 cursor-pointer items-center justify-between gap-2 rounded-sm px-3 transition-colors ${
                   value === ex
                     ? "bg-lime-soft font-bold text-lime-text"
                     : index === active
@@ -121,7 +125,8 @@ export function ExerciseCombobox({
                       : "hover:bg-inner"
                 }`}
               >
-                <ExerciseName id={ex} />
+                <span className="min-w-0 flex-1"><ExerciseName id={ex} /></span>
+                <ExerciseGifButton exercise={ex} compact />
               </li>
             ))
           ) : (

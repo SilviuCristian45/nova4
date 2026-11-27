@@ -8,6 +8,7 @@ import { Pencil, Trash2, Trophy } from "lucide-react";
 import { useLanguage } from "./language-provider";
 import { useUnits } from "./units-provider";
 import { CardioName, ExerciseName } from "./exercise-name";
+import { ExerciseGifButton } from "./exercise-gif";
 import { WorkoutLabel } from "./workout-label";
 import { Badge, IconButton, cx, type Tone } from "./ui";
 
@@ -63,7 +64,10 @@ export function SetRows({ rows, onEdit, onRemove, editingKey, empty }: {
         <li key={row.key} className={cx("flex items-start gap-3 px-[18px] py-3.5", index > 0 && "border-t border-line", editingKey === row.key && "bg-lime-soft")}>
           <span className="w-6 shrink-0 pt-0.5 text-sm text-muted tabular-nums">{row.ordinal}</span>
           <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <p className="break-words font-medium"><ExerciseName id={row.exercise} /></p>
+            <div className="flex items-start justify-between gap-1">
+              <p className="min-w-0 flex-1 break-words font-medium"><ExerciseName id={row.exercise} /></p>
+              <ExerciseGifButton exercise={row.exercise} compact />
+            </div>
             <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
               <span className="text-[20px] font-semibold tabular-nums">
                 {row.weightKg > 0 ? `${format(row.weightKg)} × ` : ""}{row.reps}

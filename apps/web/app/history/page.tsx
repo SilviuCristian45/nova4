@@ -3,6 +3,7 @@ import { Text } from "@/app/components/language-provider";
 import { WorkoutLabel } from "@/app/components/workout-label";
 import { getLanguage } from "@/app/language";
 import { CardioName, ExerciseName } from "@/app/components/exercise-name";
+import { ExerciseGifButton } from "@/app/components/exercise-gif";
 import { getWeightFormatter } from "@/app/units";
 import Link from "next/link";
 import { Dumbbell, ChevronDown, Flame, ChevronLeft, ChevronRight, MessageSquare, Pencil } from "lucide-react";
@@ -273,13 +274,16 @@ export default async function HistoryPage({
                   : Object.entries(groupedSets).map(([exercise, sets]) => (
                       <details key={exercise} className="group border-t border-line">
                         <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-[18px] py-3 [&::-webkit-details-marker]:hidden">
-                          <span className="font-medium">
+                          <span className="min-w-0 flex-1 font-medium">
                             <ExerciseName id={exercise} />{" "}
                             <span className="font-normal text-muted">
                               · {sets.length} <Text ro="seturi" en="sets" />
                             </span>
                           </span>
-                          <ChevronDown className="size-4 shrink-0 text-muted transition-transform group-open:rotate-180" />
+                          <div className="flex shrink-0 items-center gap-1">
+                            <ExerciseGifButton exercise={exercise} compact />
+                            <ChevronDown className="size-4 shrink-0 text-muted transition-transform group-open:rotate-180" />
+                          </div>
                         </summary>
                         <div className="mx-[18px] mb-3 flex flex-col rounded-md bg-inner">
                           {sets.map((set, setIndex) => (

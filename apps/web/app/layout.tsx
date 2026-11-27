@@ -11,6 +11,7 @@ import { OfflineProvider } from "@/lib/offline/client";
 import { OfflineStatus } from "./components/offline-status";
 import { DriveAutoSync } from "./components/drive-auto-sync";
 import { NotificationBell } from "./components/notification-bell";
+import { ExerciseGifProvider } from "./components/exercise-gif";
 import { getSessionUser, serverApi } from "@/lib/api/server";
 import { pageWidth } from "./components/ui";
 
@@ -84,6 +85,7 @@ export default async function RootLayout({
           <LanguageProvider initialLanguage={language}>
             <UnitsProvider initialUnit={weightUnit}>
             <OfflineProvider>
+            <ExerciseGifProvider>
             <div className={`${pageWidth} no-print flex items-center justify-end gap-2 px-5 pt-3 lg:px-8`}>
               {signedIn && <NotificationBell initialUnread={initialUnread} />}
               <LanguageSelector />
@@ -92,6 +94,7 @@ export default async function RootLayout({
             <OfflineStatus />
             {signedIn && <DriveAutoSync />}
             {children}
+            </ExerciseGifProvider>
             </OfflineProvider>
             </UnitsProvider>
           </LanguageProvider>

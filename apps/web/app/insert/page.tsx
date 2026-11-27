@@ -36,6 +36,7 @@ import {
 import { formatExerciseTarget } from "@/lib/coach/programs";
 import type { ProgramWorkoutCardio, ProgramWorkoutExercise } from "@/lib/coach/types";
 import { ExerciseName } from "@/app/components/exercise-name";
+import { ExerciseGifButton } from "@/app/components/exercise-gif";
 import type { OfflineCardio, OfflineSet } from "@/lib/offline/types";
 import { saveOfflineMutation, useOffline } from "@/lib/offline/client";
 import { useUnits } from "@/app/components/units-provider";
@@ -725,35 +726,40 @@ function InsertWorkoutContent() {
                 const targetText = formatExerciseTarget(planned, format, t);
 
                 return (
-                  <button
+                  <div
                     key={planned.id}
-                    type="button"
-                    onClick={() => {
-                      setMode("strength");
-                      applyExerciseTarget(planned);
-                    }}
-                    className={`flex flex-wrap items-center justify-between gap-2 rounded-md px-3 py-2.5 text-left transition-colors ${
+                    className={`flex items-center gap-1 rounded-md pr-1.5 transition-colors ${
                       selected
                         ? "border border-lime-border bg-lime-soft"
-                        : "bg-inner active:bg-control"
+                        : "bg-inner"
                     }`}
                   >
-                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span className="flex items-center gap-1.5 font-semibold text-foreground">
-                        {done && <Check className="size-3.5 shrink-0 text-lime-text" />}
-                        <span className="truncate"><ExerciseName id={planned.exercise} /></span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMode("strength");
+                        applyExerciseTarget(planned);
+                      }}
+                      className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-left"
+                    >
+                      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <span className="flex items-center gap-1.5 font-semibold text-foreground">
+                          {done && <Check className="size-3.5 shrink-0 text-lime-text" />}
+                          <span className="truncate"><ExerciseName id={planned.exercise} /></span>
+                        </span>
+                        <span className="text-xs font-medium text-soft">
+                          {t("Țintă", "Target")}: {targetText}
+                        </span>
+                        {planned.notes && (
+                          <span className="text-xs text-muted">{planned.notes}</span>
+                        )}
                       </span>
-                      <span className="text-xs font-medium text-soft">
-                        {t("Țintă", "Target")}: {targetText}
-                      </span>
-                      {planned.notes && (
-                        <span className="text-xs text-muted">{planned.notes}</span>
-                      )}
-                    </span>
-                    <Badge tone={done ? "lime" : undefined}>
-                      {loggedCount}/{planned.target_sets}
-                    </Badge>
-                  </button>
+                      <Badge tone={done ? "lime" : undefined}>
+                        {loggedCount}/{planned.target_sets}
+                      </Badge>
+                    </button>
+                    <ExerciseGifButton exercise={planned.exercise} compact />
+                  </div>
                 );
               })}
             </div>

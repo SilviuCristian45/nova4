@@ -1,6 +1,7 @@
 import { Text } from "@/app/components/language-provider";
 import { getLanguage } from "@/app/language";
 import { ExerciseName } from "@/app/components/exercise-name";
+import { ExerciseGifButton } from "@/app/components/exercise-gif";
 import { getWeightUnit } from "@/app/units";
 import { kgToUnit } from "@/lib/units";
 import type { recordsByExercise } from "@/lib/personal-record";
@@ -64,13 +65,16 @@ export default async function RecordsPage() {
                 <h2 className="min-w-0 flex-1 break-words text-[17px] font-medium">
                   <ExerciseName id={record.exercise} />
                 </h2>
-                {index < 3 && (
-                  <span
-                    className={`flex h-[30px] min-w-[30px] shrink-0 items-center justify-center rounded-full px-2 text-xs font-bold tabular-nums ${index === 0 ? "bg-lime text-on-solid" : "bg-control text-soft"}`}
-                  >
-                    {index + 1}
-                  </span>
-                )}
+                <div className="flex shrink-0 items-center gap-1">
+                  <ExerciseGifButton exercise={record.exercise} compact />
+                  {index < 3 && (
+                    <span
+                      className={`flex h-[30px] min-w-[30px] shrink-0 items-center justify-center rounded-full px-2 text-xs font-bold tabular-nums ${index === 0 ? "bg-lime text-on-solid" : "bg-control text-soft"}`}
+                    >
+                      {index + 1}
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="flex items-end justify-between gap-3">
                 <div className="flex min-w-0 flex-1 flex-col gap-0.5">
