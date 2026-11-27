@@ -192,6 +192,16 @@ function isoString(value: unknown): string {
   return new Date().toISOString();
 }
 
+function dateString(value: unknown): string {
+  if (value instanceof Date) {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+  return String(value).slice(0, 10);
+}
+
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
 }
@@ -1053,13 +1063,25 @@ export class SyncService {
       checkinRows,
       photoRows,
     ] = await Promise.all([
-      manager.query(`SELECT * FROM public.profiles WHERE id = $1 LIMIT 1`, [userId]),
+      manager.query(
+        `SELECT daily_steps_goal, display_name, height_cm, birth_date::text AS birth_date, sex, weight_unit, activity_level, goal_kg_per_week
+         FROM public.profiles WHERE id = $1 LIMIT 1`,
+        [userId],
+      ),
       manager.query(`SELECT * FROM public.user_targets WHERE user_id = $1 LIMIT 1`, [userId]),
       manager.query(`SELECT * FROM public.foods WHERE user_id = $1 ORDER BY created_at ASC`, [userId]),
-      manager.query(`SELECT * FROM public.workouts WHERE user_id = $1 ORDER BY performed_on ASC, created_at ASC`, [userId]),
+      manager.query(
+        `SELECT id, performed_on::text AS performed_on, split, created_at, client_id, workout_mode, program_workout_id, enrollment_id
+         FROM public.workouts WHERE user_id = $1 ORDER BY performed_on ASC, created_at ASC`,
+        [userId],
+      ),
       manager.query(`SELECT * FROM public.workout_sets WHERE user_id = $1 ORDER BY set_number ASC, created_at ASC`, [userId]),
       manager.query(`SELECT * FROM public.cardio_sessions WHERE user_id = $1 ORDER BY created_at ASC`, [userId]),
-      manager.query(`SELECT * FROM public.meals WHERE user_id = $1 ORDER BY performed_on ASC, created_at ASC`, [userId]),
+      manager.query(
+        `SELECT id, performed_on::text AS performed_on, meal_type, notes, created_at
+         FROM public.meals WHERE user_id = $1 ORDER BY performed_on ASC, created_at ASC`,
+        [userId],
+      ),
       manager.query(
         `SELECT mi.* FROM public.meal_items mi
          JOIN public.meals m ON m.id = mi.meal_id
@@ -1068,11 +1090,11 @@ export class SyncService {
         [userId],
       ),
       manager.query(`SELECT * FROM public.meal_templates WHERE user_id = $1 ORDER BY created_at ASC`, [userId]),
-      manager.query(`SELECT id, date, steps FROM public.daily_steps WHERE user_id = $1 ORDER BY date ASC`, [userId]),
-      manager.query(`SELECT date, weight_kg FROM public.daily_weight WHERE user_id = $1 ORDER BY date ASC`, [userId]),
-      manager.query(`SELECT date, energy, satiety, sleep, note FROM public.daily_checkin WHERE user_id = $1 ORDER BY date ASC`, [userId]),
+      manager.query(`SELECT id, date::text AS date, steps FROM public.daily_steps WHERE user_id = $1 ORDER BY date ASC`, [userId]),
+      manager.query(`SELECT date::text AS date, weight_kg FROM public.daily_weight WHERE user_id = $1 ORDER BY date ASC`, [userId]),
+      manager.query(`SELECT date::text AS date, energy, satiety, sleep, note FROM public.daily_checkin WHERE user_id = $1 ORDER BY date ASC`, [userId]),
       manager.query(
-        `SELECT id, taken_on, pose, note, size_bytes, created_at
+        `SELECT id, taken_on::text AS taken_on, pose, note, size_bytes, created_at
          FROM public.progress_photos
          WHERE user_id = $1
          ORDER BY taken_on ASC, created_at ASC`,
@@ -1197,13 +1219,23 @@ export class SyncService {
       checkinRows,
       photoRows,
     ] = await Promise.all([
-      pullProfile ? manager.query(`SELECT * FROM public.profiles WHERE id = $1 LIMIT 1`, [userId]) : Promise.resolve([]),
+      pullProfile
+        ? manager.query(
+            `SELECT daily_steps_goal, display_name, height_cm, birth_date::text AS birth_date, sex, weight_unit, activity_level, goal_kg_per_week
+             FROM public.profiles WHERE id = $1 LIMIT 1`,
+            [userId],
+          )
+        : Promise.resolve([]),
       pullTargets ? manager.query(`SELECT * FROM public.user_targets WHERE user_id = $1 LIMIT 1`, [userId]) : Promise.resolve([]),
       foodIds.length > 0
         ? manager.query(`SELECT * FROM public.foods WHERE user_id = $1 AND id = ANY($2::uuid[])`, [userId, foodIds])
         : Promise.resolve([]),
       workoutIds.length > 0
-        ? manager.query(`SELECT * FROM public.workouts WHERE user_id = $1 AND id = ANY($2::uuid[])`, [userId, workoutIds])
+        ? manager.query(
+            `SELECT id, performed_on::text AS performed_on, split, created_at, client_id, workout_mode, program_workout_id, enrollment_id
+             FROM public.workouts WHERE user_id = $1 AND id = ANY($2::uuid[])`,
+            [userId, workoutIds],
+          )
         : Promise.resolve([]),
       workoutIds.length > 0
         ? manager.query(
@@ -1218,7 +1250,11 @@ export class SyncService {
           )
         : Promise.resolve([]),
       mealIds.length > 0
-        ? manager.query(`SELECT * FROM public.meals WHERE user_id = $1 AND id = ANY($2::uuid[])`, [userId, mealIds])
+        ? manager.query(
+            `SELECT id, performed_on::text AS performed_on, meal_type, notes, created_at
+             FROM public.meals WHERE user_id = $1 AND id = ANY($2::uuid[])`,
+            [userId, mealIds],
+          )
         : Promise.resolve([]),
       mealIds.length > 0
         ? manager.query(
@@ -1233,20 +1269,20 @@ export class SyncService {
         ? manager.query(`SELECT * FROM public.meal_templates WHERE user_id = $1 AND id = ANY($2::uuid[])`, [userId, templateIds])
         : Promise.resolve([]),
       stepDates.length > 0
-        ? manager.query(`SELECT id, date, steps FROM public.daily_steps WHERE user_id = $1 AND date = ANY($2::date[])`, [userId, stepDates])
+        ? manager.query(`SELECT id, date::text AS date, steps FROM public.daily_steps WHERE user_id = $1 AND date = ANY($2::date[])`, [userId, stepDates])
         : Promise.resolve([]),
       weightDates.length > 0
-        ? manager.query(`SELECT date, weight_kg FROM public.daily_weight WHERE user_id = $1 AND date = ANY($2::date[])`, [userId, weightDates])
+        ? manager.query(`SELECT date::text AS date, weight_kg FROM public.daily_weight WHERE user_id = $1 AND date = ANY($2::date[])`, [userId, weightDates])
         : Promise.resolve([]),
       checkinDates.length > 0
         ? manager.query(
-            `SELECT date, energy, satiety, sleep, note FROM public.daily_checkin WHERE user_id = $1 AND date = ANY($2::date[])`,
+            `SELECT date::text AS date, energy, satiety, sleep, note FROM public.daily_checkin WHERE user_id = $1 AND date = ANY($2::date[])`,
             [userId, checkinDates],
           )
         : Promise.resolve([]),
       photoIds.length > 0
         ? manager.query(
-            `SELECT id, taken_on, pose, note, size_bytes, created_at
+            `SELECT id, taken_on::text AS taken_on, pose, note, size_bytes, created_at
              FROM public.progress_photos
              WHERE user_id = $1 AND id = ANY($2::uuid[])`,
             [userId, photoIds],
@@ -1294,7 +1330,7 @@ export class SyncService {
       daily_steps_goal: toFiniteNumber(row.daily_steps_goal, 10000),
       display_name: row.display_name === null || row.display_name === undefined ? null : String(row.display_name),
       height_cm: row.height_cm === null || row.height_cm === undefined ? null : Number(row.height_cm),
-      birth_date: row.birth_date === null || row.birth_date === undefined ? null : String(row.birth_date).slice(0, 10),
+      birth_date: row.birth_date === null || row.birth_date === undefined ? null : dateString(row.birth_date),
       sex: row.sex === "male" || row.sex === "female" ? row.sex : null,
       weight_unit: row.weight_unit === "lb" ? "lb" : "kg",
       activity_level: row.activity_level === null || row.activity_level === undefined ? null : String(row.activity_level),
@@ -1357,7 +1393,7 @@ export class SyncService {
       const id = String(w.id);
       return {
         id,
-        performed_on: String(w.performed_on).slice(0, 10),
+        performed_on: dateString(w.performed_on),
         split: String(w.split),
         created_at: isoString(w.created_at),
         client_id: w.client_id === null || w.client_id === undefined ? null : String(w.client_id),
@@ -1397,7 +1433,7 @@ export class SyncService {
         : "Snack";
       return {
         id,
-        performed_on: String(m.performed_on).slice(0, 10),
+        performed_on: dateString(m.performed_on),
         meal_type: mealType,
         notes: m.notes === null || m.notes === undefined ? null : String(m.notes),
         created_at: isoString(m.created_at),
@@ -1418,21 +1454,21 @@ export class SyncService {
   private mapSteps(rows: Record<string, unknown>[]): SyncStepsPayload[] {
     return rows.map((r) => ({
       id: String(r.id),
-      date: String(r.date).slice(0, 10),
+      date: dateString(r.date),
       steps: toFiniteNumber(r.steps, 0),
     }));
   }
 
   private mapWeights(rows: Record<string, unknown>[]): SyncWeightPayload[] {
     return rows.map((r) => ({
-      date: String(r.date).slice(0, 10),
+      date: dateString(r.date),
       weight_kg: toFiniteNumber(r.weight_kg, 0),
     }));
   }
 
   private mapCheckins(rows: Record<string, unknown>[]): SyncDailyCheckinPayload[] {
     return rows.map((r) => ({
-      date: String(r.date).slice(0, 10),
+      date: dateString(r.date),
       energy: r.energy === null || r.energy === undefined ? null : Number(r.energy),
       satiety: r.satiety === null || r.satiety === undefined ? null : Number(r.satiety),
       sleep: r.sleep === null || r.sleep === undefined ? null : Number(r.sleep),
@@ -1443,7 +1479,7 @@ export class SyncService {
   private mapPhotos(rows: Record<string, unknown>[]): SyncProgressPhotoPayload[] {
     return rows.map((r) => ({
       id: String(r.id),
-      taken_on: String(r.taken_on).slice(0, 10),
+      taken_on: dateString(r.taken_on),
       pose: isPhotoPose(r.pose) ? r.pose : "other",
       note: r.note === null || r.note === undefined ? null : String(r.note),
       size_bytes: toFiniteNumber(r.size_bytes, 0),

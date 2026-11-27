@@ -2,7 +2,7 @@ import { INestApplication, ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import cookieParser from "cookie-parser";
-import { raw as expressRaw } from "express";
+import { json as expressJson, raw as expressRaw, urlencoded as expressUrlencoded } from "express";
 import helmet from "helmet";
 
 export function configureApp(app: INestApplication, options: { enableSwagger?: boolean } = {}): void {
@@ -16,6 +16,9 @@ export function configureApp(app: INestApplication, options: { enableSwagger?: b
   app.setGlobalPrefix("api/v1");
   app.use(helmet());
   app.use(cookieParser());
+  const jsonBodyLimit = config.get<string>("JSON_BODY_LIMIT")?.trim() || "10mb";
+  app.use(expressJson({ limit: jsonBodyLimit }));
+  app.use(expressUrlencoded({ extended: true, limit: jsonBodyLimit }));
   app.use(expressRaw({ type: "image/jpeg", limit: "6mb" }));
 
   const corsRaw = config.get<string>("CORS_ORIGINS") ?? "http://localhost:3000";

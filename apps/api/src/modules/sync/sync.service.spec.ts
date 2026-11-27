@@ -223,4 +223,67 @@ describe("SyncService (unit)", () => {
     expect(storage.headObject).toHaveBeenCalledWith("progress-photos", `${userId}/${photoId}.jpg`);
     expect(storage.deleteObject).toHaveBeenCalledWith("progress-photos", `${userId}/${photoId}.jpg`);
   });
+
+  it("formats pg Date instances as YYYY-MM-DD strings on full pull", async () => {
+    const { service } = createMockService((sql) => {
+      if (sql.includes("MAX(seq)")) return [{ seq: "5" }];
+      if (sql.includes("FROM public.profiles")) {
+        return [{ daily_steps_goal: 10000, birth_date: new Date(1995, 4, 9), weight_unit: "kg", goal_kg_per_week: 0 }];
+      }
+      if (sql.includes("FROM public.workouts")) {
+        return [
+          {
+            id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            performed_on: new Date(2026, 6, 30),
+            split: "Push",
+            created_at: new Date("2026-07-30T10:00:00.000Z"),
+            client_id: null,
+            workout_mode: "strength",
+          },
+        ];
+      }
+      if (sql.includes("FROM public.meals")) {
+        return [
+          {
+            id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+            performed_on: new Date(2026, 7, 13),
+            meal_type: "Lunch",
+            notes: null,
+            created_at: new Date("2026-08-13T12:00:00.000Z"),
+          },
+        ];
+      }
+      if (sql.includes("FROM public.daily_steps")) {
+        return [{ id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", date: new Date(2026, 7, 13), steps: 12354 }];
+      }
+      if (sql.includes("FROM public.daily_weight")) {
+        return [{ date: new Date(2026, 9, 16), weight_kg: "79.6" }];
+      }
+      if (sql.includes("FROM public.daily_checkin")) {
+        return [{ date: new Date(2026, 9, 17), energy: 8, satiety: 7, sleep: 8, note: null }];
+      }
+      if (sql.includes("FROM public.progress_photos")) {
+        return [
+          {
+            id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+            taken_on: new Date(2026, 9, 18),
+            pose: "front",
+            note: null,
+            size_bytes: 50000,
+            created_at: new Date("2026-10-18T08:00:00.000Z"),
+          },
+        ];
+      }
+      return [];
+    });
+
+    const pull = await service.pull(userId, 0);
+    expect(pull.upserts.profile?.birth_date).toBe("1995-05-09");
+    expect(pull.upserts.workouts[0]?.performed_on).toBe("2026-07-30");
+    expect(pull.upserts.meals[0]?.performed_on).toBe("2026-08-13");
+    expect(pull.upserts.daily_steps[0]?.date).toBe("2026-08-13");
+    expect(pull.upserts.daily_weight[0]?.date).toBe("2026-10-16");
+    expect(pull.upserts.daily_checkin[0]?.date).toBe("2026-10-17");
+    expect(pull.upserts.progress_photos[0]?.taken_on).toBe("2026-10-18");
+  });
 });
