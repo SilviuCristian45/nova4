@@ -157,23 +157,24 @@ export function useRestTimer() {
 export function RestTimerSettings({ timer }: { timer: RestTimer }) {
   const { t } = useLanguage();
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="flex items-center gap-1.5 text-[13px] font-medium text-muted">
-          <Timer className="size-3.5" />{t("Pauză între seturi", "Rest between sets")}
+    <div className="flex flex-col gap-2 border-t border-card-border pt-3.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="mr-1 flex items-center gap-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.07em] text-muted">
+          <Timer className="size-3.5" />{t("Pauză", "Rest")}
         </span>
         {REST_PRESETS.map((seconds) => (
           <button key={seconds} type="button" onClick={() => timer.chooseDuration(seconds)} aria-pressed={timer.duration === seconds}
-            className={`h-9 rounded-full px-3 text-[13px] font-semibold tabular-nums transition-colors ${timer.duration === seconds
-              ? "bg-lime text-on-solid"
-              : "bg-inner text-muted"}`}>
+            className={`h-8 rounded-sm border px-2.5 font-mono text-[12px] font-semibold tabular-nums transition-colors ${timer.duration === seconds
+              ? "border-transparent bg-lime text-on-solid"
+              : "border-card-border bg-inner text-soft hover:border-card-border-strong hover:text-foreground"}`}>
             {formatClock(seconds)}
           </button>
         ))}
         <button type="button" onClick={() => void timer.toggleNotify()} aria-pressed={timer.notify}
           aria-label={timer.notify ? t("Oprește notificările", "Turn off notifications") : t("Pornește notificările", "Turn on notifications")}
-          className={`flex h-9 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold ${timer.notify
-            ? "bg-lime-soft text-lime-text" : "bg-inner text-muted"}`}>
+          className={`flex h-8 items-center gap-1.5 rounded-sm border px-2.5 text-[12px] font-semibold transition-colors ${timer.notify
+            ? "border-lime-border bg-lime-soft text-lime-text"
+            : "border-card-border bg-inner text-soft hover:border-card-border-strong hover:text-foreground"}`}>
           {timer.notify ? <Bell className="size-3.5" /> : <BellOff className="size-3.5" />}
           {t("Notificare", "Notify")}
         </button>
@@ -188,34 +189,75 @@ export function RestTimerSettings({ timer }: { timer: RestTimer }) {
   );
 }
 
-// Countdown pinned to the bottom of the screen while resting.
+// Floating countdown dock positioned cleanly above the mobile tab bar and aligned on desktop.
 export function RestTimerBar({ timer }: { timer: RestTimer }) {
   const { t } = useLanguage();
   if (!timer.running && !timer.finished) return null;
   const progress = timer.running ? 1 - timer.remaining / Math.max(timer.duration, timer.remaining) : 1;
   return (
-    <div role="timer" aria-live="polite"
-      className="fixed inset-x-0 bottom-0 z-50 bg-card/95 backdrop-blur-md"
-      style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
-      <div className="h-1.5 bg-inner"><div className="h-full rounded-r-full bg-lime transition-[width] duration-300" style={{ width: `${progress * 100}%` }} /></div>
-      <div className="mx-auto flex max-w-xl items-center justify-between gap-3 px-5 py-3">
-        {timer.running ? <>
-          <div className="flex flex-col">
-            <span className="text-[13px] font-medium text-muted">{t("Pauză", "Rest")}</span>
-            <span className="text-[32px] font-bold leading-tight tracking-[-1px] tabular-nums">{formatClock(timer.remaining)}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => timer.adjust(-15)} aria-label={t("Scade 15 secunde", "Subtract 15 seconds")}
-              className="flex h-11 items-center gap-1 rounded-full bg-control px-3 text-sm font-semibold tabular-nums"><Minus className="size-4" />15</button>
-            <button type="button" onClick={() => timer.adjust(15)} aria-label={t("Adaugă 15 secunde", "Add 15 seconds")}
-              className="flex h-11 items-center gap-1 rounded-full bg-control px-3 text-sm font-semibold tabular-nums"><Plus className="size-4" />15</button>
-            <button type="button" onClick={timer.skip} aria-label={t("Sari peste pauză", "Skip rest")}
-              className="flex h-11 items-center gap-1.5 rounded-full bg-lime px-4 text-sm font-semibold text-on-solid"><SkipForward className="size-4" />{t("Gata", "Skip")}</button>
-          </div>
-        </> : <>
-          <span className="text-[17px] font-bold text-lime-text">{t("Pauza s-a terminat. Următorul set!", "Rest is over. Next set!")}</span>
-          <button type="button" onClick={timer.skip} className="h-11 rounded-full bg-control px-5 text-sm font-semibold">OK</button>
-        </>}
+    <div
+      role="timer"
+      aria-live="polite"
+      className="pointer-events-none fixed inset-x-3 bottom-[76px] z-50 lg:inset-x-6 lg:bottom-5 lg:left-[calc(244px+24px)]"
+      style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+    >
+      <div className="surface-card pointer-events-auto mx-auto max-w-xl overflow-hidden rounded-lg border border-card-border-strong bg-nav-glass backdrop-blur-xl">
+        <div className="h-1 bg-inner">
+          <div className="h-full bg-lime transition-[width] duration-300" style={{ width: `${progress * 100}%` }} />
+        </div>
+        <div className="flex items-center justify-between gap-3 px-4 py-3">
+          {timer.running ? (
+            <>
+              <div className="flex flex-col">
+                <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.09em] text-muted">
+                  {t("Pauză", "Rest timer")}
+                </span>
+                <span className="font-mono text-[28px] font-bold leading-tight tracking-[-0.03em] tabular-nums">
+                  {formatClock(timer.remaining)}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => timer.adjust(-15)}
+                  aria-label={t("Scade 15 secunde", "Subtract 15 seconds")}
+                  className="flex h-9 items-center gap-1 rounded-md border border-card-border bg-control px-2.5 font-mono text-[12.5px] font-semibold tabular-nums transition-colors hover:bg-inner"
+                >
+                  <Minus className="size-3.5" />15
+                </button>
+                <button
+                  type="button"
+                  onClick={() => timer.adjust(15)}
+                  aria-label={t("Adaugă 15 secunde", "Add 15 seconds")}
+                  className="flex h-9 items-center gap-1 rounded-md border border-card-border bg-control px-2.5 font-mono text-[12.5px] font-semibold tabular-nums transition-colors hover:bg-inner"
+                >
+                  <Plus className="size-3.5" />15
+                </button>
+                <button
+                  type="button"
+                  onClick={timer.skip}
+                  aria-label={t("Sari peste pauză", "Skip rest")}
+                  className="flex h-9 items-center gap-1.5 rounded-md bg-lime px-3.5 text-[13px] font-semibold text-on-solid transition-colors hover:bg-lime-hover"
+                >
+                  <SkipForward className="size-3.5" />{t("Gata", "Skip")}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <span className="text-[15px] font-bold text-lime-text">
+                {t("Pauza s-a terminat. Următorul set!", "Rest is over. Next set!")}
+              </span>
+              <button
+                type="button"
+                onClick={timer.skip}
+                className="h-9 rounded-md border border-card-border bg-control px-4 text-[13px] font-semibold transition-colors hover:bg-inner"
+              >
+                OK
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 "use client";
 
-// Workout pieces shared by /insert, /offline and /edit so the three look the same: set-type badges and the
-// session list (every set in one card, flat rows separated by hairlines).
+// Workout pieces shared by /insert, /offline and /edit so the three look consistent:
+// set-type badges and structured session rows with tabular telemetry.
 
 import type { ReactNode } from "react";
 import { Pencil, Trash2, Trophy } from "lucide-react";
@@ -51,39 +51,60 @@ export type SetRowData = {
   extra?: ReactNode;
 };
 
-// One card holding every set of the session. `onEdit` / `onRemove` add plain pencil / bin buttons.
+// One architectural card holding every set of the session. `onEdit` / `onRemove` add plain pencil / bin buttons.
 export function SetRows({ rows, onEdit, onRemove, editingKey, empty }: {
   rows: SetRowData[]; onEdit?: (key: string) => void; onRemove?: (key: string) => void; editingKey?: string | null; empty?: ReactNode;
 }) {
   const { t } = useLanguage();
   const { format } = useUnits();
-  if (rows.length === 0) return empty ? <p className="rounded-lg bg-card px-[18px] py-6 text-center font-medium text-muted">{empty}</p> : null;
+  if (rows.length === 0) {
+    return empty ? (
+      <p className="surface-card rounded-lg border border-dashed border-card-border-strong bg-card px-5 py-8 text-center text-[13.5px] font-medium text-muted">
+        {empty}
+      </p>
+    ) : null;
+  }
   return (
-    <ul className="flex flex-col overflow-hidden rounded-lg bg-card">
+    <ul className="surface-card flex flex-col overflow-hidden rounded-lg border border-card-border bg-card">
       {rows.map((row, index) => (
-        <li key={row.key} className={cx("flex items-start gap-3 px-[18px] py-3.5", index > 0 && "border-t border-line", editingKey === row.key && "bg-lime-soft")}>
-          <span className="w-6 shrink-0 pt-0.5 text-sm text-muted tabular-nums">{row.ordinal}</span>
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <div className="flex items-start justify-between gap-1">
-              <p className="min-w-0 flex-1 break-words font-medium"><ExerciseName id={row.exercise} /></p>
+        <li
+          key={row.key}
+          className={cx(
+            "flex items-start gap-3 px-4 py-3.5 transition-colors hover:bg-inner/40",
+            index > 0 && "border-t border-line",
+            editingKey === row.key && "bg-lime-soft hover:bg-lime-soft",
+          )}
+        >
+          <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-sm border border-card-border bg-inner font-mono text-[11.5px] font-semibold text-muted tabular-nums">
+            {row.ordinal}
+          </span>
+          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <div className="flex items-start justify-between gap-1.5">
+              <p className="min-w-0 flex-1 break-words text-[14.5px] font-semibold leading-snug text-foreground">
+                <ExerciseName id={row.exercise} />
+              </p>
               <ExerciseGifButton exercise={row.exercise} compact />
             </div>
-            <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-              <span className="text-[20px] font-semibold tabular-nums">
+            <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+              <span className="font-mono text-[17px] font-bold tracking-[-0.02em] text-foreground tabular-nums">
                 {row.weightKg > 0 ? `${format(row.weightKg)} × ` : ""}{row.reps}
-                {row.weightKg > 0 ? "" : <span className="text-[15px] font-normal text-muted"> {t("repetări", "reps")}</span>}
+                {row.weightKg > 0 ? "" : <span className="ml-1 font-sans text-[13px] font-normal text-muted">{t("repetări", "reps")}</span>}
               </span>
-              {row.rir !== null && <span className="text-[13px] text-muted">RIR {row.rir}</span>}
-            </p>
+              {row.rir !== null && (
+                <span className="rounded-sm bg-inner px-1.5 py-0.5 font-mono text-[11px] font-medium text-soft tabular-nums">
+                  RIR {row.rir}
+                </span>
+              )}
+            </div>
             <div className="flex flex-wrap items-center gap-1.5">
               <SetTypeBadge type={row.setType} />
               {row.record && <RecordBadge />}
               {row.extra}
             </div>
-            {row.notes && <p className="whitespace-pre-wrap break-words text-[13px] text-muted">{row.notes}</p>}
+            {row.notes && <p className="whitespace-pre-wrap break-words text-[12.5px] text-muted">{row.notes}</p>}
           </div>
           {(onEdit || onRemove) && (
-            <div className="-mr-2 flex shrink-0">
+            <div className="-mr-1 flex shrink-0 items-center gap-0.5">
               {onEdit && <IconButton plain icon={Pencil} label={`${t("Editează setul", "Edit set")} ${row.ordinal}`} onClick={() => onEdit(row.key)} />}
               {onRemove && <IconButton plain icon={Trash2} label={`${t("Elimină setul", "Remove set")} ${row.ordinal}`} onClick={() => onRemove(row.key)} />}
             </div>
@@ -98,16 +119,33 @@ export function CardioRows({ rows, onRemove, empty }: {
   rows: { key: string; activity: string; durationMin: number }[]; onRemove?: (key: string) => void; empty?: ReactNode;
 }) {
   const { t, locale } = useLanguage();
-  if (rows.length === 0) return empty ? <p className="rounded-lg bg-card px-[18px] py-6 text-center font-medium text-muted">{empty}</p> : null;
+  if (rows.length === 0) {
+    return empty ? (
+      <p className="surface-card rounded-lg border border-dashed border-card-border-strong bg-card px-5 py-8 text-center text-[13.5px] font-medium text-muted">
+        {empty}
+      </p>
+    ) : null;
+  }
   return (
-    <ul className="flex flex-col overflow-hidden rounded-lg bg-card">
+    <ul className="surface-card flex flex-col overflow-hidden rounded-lg border border-card-border bg-card">
       {rows.map((row, index) => (
-        <li key={row.key} className={cx("flex items-center gap-3 px-[18px] py-3.5", index > 0 && "border-t border-line")}>
-          <div className="flex min-w-0 flex-1 flex-col">
-            <p className="break-words font-medium"><CardioName id={row.activity} /></p>
-            <p className="text-[20px] font-semibold tabular-nums text-coral-text">{row.durationMin.toLocaleString(locale)} <span className="text-[15px] font-normal text-muted">min</span></p>
+        <li
+          key={row.key}
+          className={cx(
+            "flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-inner/40",
+            index > 0 && "border-t border-line",
+          )}
+        >
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-sm border border-coral-border bg-coral-soft font-mono text-[11.5px] font-semibold text-coral-text tabular-nums">
+            {index + 1}
+          </span>
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <p className="break-words text-[14.5px] font-semibold text-foreground"><CardioName id={row.activity} /></p>
+            <p className="font-mono text-[16px] font-bold text-coral-text tabular-nums">
+              {row.durationMin.toLocaleString(locale)} <span className="font-sans text-[12.5px] font-normal text-muted">min</span>
+            </p>
           </div>
-          {onRemove && <IconButton plain icon={Trash2} className="-mr-2" label={`${t("Elimină activitatea", "Remove activity")} ${index + 1}`} onClick={() => onRemove(row.key)} />}
+          {onRemove && <IconButton plain icon={Trash2} className="-mr-1" label={`${t("Elimină activitatea", "Remove activity")} ${index + 1}`} onClick={() => onRemove(row.key)} />}
         </li>
       ))}
     </ul>

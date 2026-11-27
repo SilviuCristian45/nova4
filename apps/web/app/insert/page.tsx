@@ -63,7 +63,7 @@ import {
   cardioName,
 } from "@/lib/exercise-catalog";
 import { CardioRows, SetRows } from "@/app/components/workout-parts";
-import { Badge, Button, Card, Field, IconButton, Input, Message, Screen, Segmented, Select } from "@/app/components/ui";
+import { Badge, Button, Card, Eyebrow, Field, IconButton, Input, Message, Screen, Segmented, Select } from "@/app/components/ui";
 
 const DRAFT_KEY = "workout_draft_v1";
 
@@ -670,9 +670,22 @@ function InsertWorkoutContent() {
 
   const hasEntries = (mode === "strength" && sessionSets.length > 0) || (mode === "cardio" && cardioEntries.length > 0);
   const activePlannedExercise = assignedPlan?.exercises.find((ex) => ex.exercise === exercise) ?? null;
+  const totalVolumeKg = sessionSets.reduce((sum, s) => sum + (s.weight > 0 ? s.weight * s.reps : 0), 0);
+  const totalCardioMin = cardioEntries.reduce((sum, c) => sum + c.durationMin, 0);
+  const prCount = personalRecords.size;
 
   return (
-    <Screen title={t("Antrenament nou", "New workout")} className={restTimer.running || restTimer.finished ? "pb-32" : ""}>
+    <Screen
+      title={t("Antrenament nou", "New workout")}
+      right={
+        hasEntries ? (
+          <Button small icon={Save} onClick={handleFinish} busy={isSaving || saveLocked}>
+            <Text ro="Finalizează" en="Finish" />
+          </Button>
+        ) : undefined
+      }
+      className={restTimer.running || restTimer.finished ? "pb-36" : ""}
+    >
       {draftConflict && assignedPlan && (
         <Card tone="gold">
           <div className="flex items-start gap-2.5">
@@ -700,25 +713,71 @@ function InsertWorkoutContent() {
         </Card>
       )}
 
+      {/* Live Session Telemetry Strip: Timer + Live Volume/Sets/PRs + Mode Switch */}
+      <Card className="gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center justify-between gap-4 sm:justify-start">
+          <div className="flex flex-col gap-0.5">
+            <Eyebrow>{t("Cronometru sesiune", "Session timer")}</Eyebrow>
+            <span className={`font-mono text-[28px] font-bold leading-none tracking-[-0.03em] tabular-nums ${isRunning ? "text-lime-text" : "text-foreground"}`}>
+              {formatTime(time)}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {!isRunning ? (
+              <IconButton icon={Play} tone="lime" label={t("Pornește cronometrul", "Start timer")} onClick={startTimer} />
+            ) : (
+              <IconButton icon={Pause} tone="gold" label={t("Pauză cronometru", "Pause timer")} onClick={pauseTimer} />
+            )}
+            <IconButton icon={Square} label={t("Resetează cronometrul", "Reset timer")} onClick={resetTimer} />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-4 border-t border-card-border pt-3 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-6">
+          <div className="flex flex-col gap-0.5">
+            <Eyebrow>{mode === "strength" ? t("Seturi", "Sets") : t("Activități", "Entries")}</Eyebrow>
+            <span className="font-mono text-[20px] font-bold leading-tight tabular-nums">
+              {mode === "strength" ? sessionSets.length : cardioEntries.length}
+            </span>
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <Eyebrow>{mode === "strength" ? t("Volum", "Volume") : t("Durată", "Duration")}</Eyebrow>
+            <span className="font-mono text-[20px] font-bold leading-tight tabular-nums">
+              {mode === "strength"
+                ? totalVolumeKg > 0
+                  ? format(Math.round(totalVolumeKg))
+                  : `0 ${unit}`
+                : `${totalCardioMin}m`}
+            </span>
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <Eyebrow>PR</Eyebrow>
+            <span className={`font-mono text-[20px] font-bold leading-tight tabular-nums ${prCount > 0 ? "text-lime-text" : "text-muted"}`}>
+              {prCount}
+            </span>
+          </div>
+        </div>
+      </Card>
+
       {assignedPlan && (
-        <Card>
-          <div className="flex flex-wrap items-start justify-between gap-2">
+        <Card className="relative overflow-hidden">
+          <span aria-hidden="true" className="absolute inset-y-0 left-0 w-[3.5px] bg-lime" />
+          <div className="flex flex-wrap items-start justify-between gap-2 pl-1">
             <div className="flex flex-col gap-0.5">
-              <span className="flex items-center gap-1.5 text-xs font-semibold text-lime-text">
+              <span className="flex items-center gap-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.09em] text-lime-text">
                 <ClipboardList className="size-3.5" />
                 {assignedPlan.programTitle || t("Program asignat", "Assigned program")}
               </span>
-              <h2 className="text-lg font-bold">{assignedPlan.title}</h2>
+              <h2 className="text-[18px] font-bold tracking-[-0.02em]">{assignedPlan.title}</h2>
             </div>
             <Badge tone="lime">
               {t("S", "W")}{assignedPlan.weekNumber}·{t("Z", "D")}{assignedPlan.dayNumber}
             </Badge>
           </div>
           {assignedPlan.notes && (
-            <p className="rounded-md bg-inner px-3 py-2 text-xs text-soft">{assignedPlan.notes}</p>
+            <p className="ml-1 rounded-md border border-card-border bg-inner px-3 py-2 text-xs text-soft">{assignedPlan.notes}</p>
           )}
           {assignedPlan.workoutMode === "strength" && assignedPlan.exercises.length > 0 && (
-            <div className="flex flex-col gap-1.5">
+            <div className="ml-1 flex flex-col gap-1.5">
               {assignedPlan.exercises.map((planned) => {
                 const loggedCount = sessionSets.filter((s) => s.exercise === planned.exercise).length;
                 const done = loggedCount >= planned.target_sets;
@@ -728,10 +787,10 @@ function InsertWorkoutContent() {
                 return (
                   <div
                     key={planned.id}
-                    className={`flex items-center gap-1 rounded-md pr-1.5 transition-colors ${
+                    className={`flex items-center gap-1 rounded-md border pr-1.5 transition-colors ${
                       selected
-                        ? "border border-lime-border bg-lime-soft"
-                        : "bg-inner"
+                        ? "border-lime-border bg-lime-soft"
+                        : "border-card-border bg-inner hover:border-card-border-strong"
                     }`}
                   >
                     <button
@@ -743,11 +802,11 @@ function InsertWorkoutContent() {
                       className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-left"
                     >
                       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                        <span className="flex items-center gap-1.5 font-semibold text-foreground">
+                        <span className="flex items-center gap-1.5 text-[14px] font-semibold text-foreground">
                           {done && <Check className="size-3.5 shrink-0 text-lime-text" />}
                           <span className="truncate"><ExerciseName id={planned.exercise} /></span>
                         </span>
-                        <span className="text-xs font-medium text-soft">
+                        <span className="font-mono text-[11.5px] text-soft">
                           {t("Țintă", "Target")}: {targetText}
                         </span>
                         {planned.notes && (
@@ -765,7 +824,7 @@ function InsertWorkoutContent() {
             </div>
           )}
           {assignedPlan.workoutMode === "cardio" && assignedPlan.cardio.length > 0 && (
-            <div className="flex flex-col gap-1.5">
+            <div className="ml-1 flex flex-col gap-1.5">
               {assignedPlan.cardio.map((planned) => {
                 const selected = mode === "cardio" && cardioActivity === planned.activity;
                 return (
@@ -777,10 +836,10 @@ function InsertWorkoutContent() {
                       setCardioActivity(planned.activity);
                       setCardioDuration(String(planned.target_duration_min));
                     }}
-                    className={`flex items-center justify-between gap-2 rounded-md px-3 py-2.5 text-left transition-colors ${
+                    className={`flex items-center justify-between gap-2 rounded-md border px-3 py-2.5 text-left transition-colors ${
                       selected
-                        ? "border border-lime-border bg-lime-soft"
-                        : "bg-inner active:bg-control"
+                        ? "border-lime-border bg-lime-soft"
+                        : "border-card-border bg-inner hover:border-card-border-strong"
                     }`}
                   >
                     <span className="flex flex-col gap-0.5">
@@ -796,181 +855,178 @@ function InsertWorkoutContent() {
         </Card>
       )}
 
-      <Segmented
-        label={t("Tip de antrenament", "Workout mode")}
-        value={mode}
-        onChange={setMode}
-        options={[
-          { value: "strength", label: t("Forță", "Strength"), icon: Dumbbell },
-          { value: "cardio", label: "Cardio", icon: Heart },
-        ]}
-      />
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)] lg:items-start">
+        <div className="flex min-w-0 flex-col gap-4">
+          <Segmented
+            label={t("Tip de antrenament", "Workout mode")}
+            value={mode}
+            onChange={setMode}
+            options={[
+              { value: "strength", label: t("Forță", "Strength"), icon: Dumbbell },
+              { value: "cardio", label: "Cardio", icon: Heart },
+            ]}
+          />
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start lg:gap-5">
-      <div className="flex min-w-0 flex-col gap-4 lg:gap-5">
-      {/* Workout timer */}
-      <section className="flex items-center justify-between gap-3 rounded-lg bg-card px-[18px] py-3.5">
-        <div className="flex flex-col">
-          <span className="text-[13px] font-medium text-muted"><Text ro="Cronometru" en="Timer" /></span>
-          <span className={`text-[32px] font-bold leading-tight tracking-[-1px] tabular-nums ${isRunning ? "text-lime-text" : ""}`}>
-            {formatTime(time)}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          {!isRunning ? (
-            <IconButton icon={Play} tone="lime" label={t("Pornește cronometrul", "Start timer")} onClick={startTimer} />
-          ) : (
-            <IconButton icon={Pause} tone="gold" label={t("Pauză cronometru", "Pause timer")} onClick={pauseTimer} />
+          {mode === "strength" && (
+            <form onSubmit={handleAddSet}>
+              <Card>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Field label={<Text ro="Împărțire" en="Split" />}>
+                    <Select
+                      title={t("Împărțire", "Split")}
+                      value={split}
+                      onChange={(value) => {
+                        const nextSplit = value as Split;
+                        setSplit(nextSplit);
+                        const nextList = getExercisesForSplit(nextSplit);
+                        if (nextList[0]) setExercise(nextList[0]);
+                      }}
+                      options={SPLITS.map((s) => ({ value: s, label: workoutLabelText(s, t) }))}
+                    />
+                  </Field>
+                  <Field label={<Text ro="Tip set" en="Set type" />}>
+                    <Select
+                      title={t("Tip set", "Set type")}
+                      value={setType}
+                      onChange={(value) => setSetType(value as SetType)}
+                      options={SET_TYPES.map((type) => ({ value: type, label: workoutLabelText(type, t) }))}
+                    />
+                  </Field>
+                </div>
+
+                <div className="flex flex-col gap-2.5">
+                  <ExerciseCombobox key={split} exercises={availableExercises} value={exercise} onChange={setExercise} />
+
+                  {/* Structured exercise intelligence panel (coach target, history, all-time PR, plateau, progression) */}
+                  {(activePlannedExercise || exerciseHint || recordHint || plateauHint || recommendedPerformance) && (
+                    <div className="flex flex-col gap-2 rounded-md border border-card-border bg-inner p-3 text-[12.5px]">
+                      {activePlannedExercise && (
+                        <p className="flex items-center gap-2 font-semibold text-ice-text">
+                          <Target className="size-3.5 shrink-0" />
+                          <span>{t("Țintă antrenor", "Coach target")}: {formatExerciseTarget(activePlannedExercise, format, t)}</span>
+                        </p>
+                      )}
+                      {exerciseHint && (
+                        <p className={`flex items-center gap-2 font-medium ${
+                          latestRecord ? "font-semibold text-lime-text" : exerciseHint.includes(t("Exercițiu nou", "New exercise")) ? "text-muted" : "text-foreground"
+                        }`}>
+                          {latestRecord && <Trophy className="size-3.5 shrink-0 text-lime-text" />}
+                          <span>{exerciseHint}</span>
+                        </p>
+                      )}
+                      {recordHint && (
+                        <p className="flex items-center gap-2 font-mono text-[11.5px] text-soft">
+                          <Trophy className="size-3.5 shrink-0 text-gold-text" />
+                          <span>{recordHint}</span>
+                        </p>
+                      )}
+                      {plateauHint && (
+                        <p role="status" className="flex items-start gap-2 rounded-sm border border-gold-border bg-gold-soft px-2.5 py-1.5 font-medium text-gold-text">
+                          <Hourglass className="mt-0.5 size-3.5 shrink-0" />
+                          <span>{plateauHint}</span>
+                        </p>
+                      )}
+                      {recommendedPerformance && !recommendedIsNew && (
+                        <p className="flex items-center gap-2 border-t border-card-border pt-2 font-semibold text-lime-text">
+                          <span>{recommendedPerformance}</span>
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-4 gap-2">
+                  <Field label={<Text ro="Set" en="Set" />} htmlFor="set-number">
+                    <Input id="set-number" center type="number" readOnly aria-readonly="true"
+                      value={sessionSets.filter((s) => s.exercise === exercise).length + 1} compact />
+                  </Field>
+                  <Field label={unit} htmlFor="set-weight">
+                    <Input id="set-weight" big type="number" inputMode="decimal" step="0.5" min={0} max={Math.floor(toUnit(10000))}
+                      value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="0" compact />
+                  </Field>
+                  <Field label={<Text ro="Repetări" en="Reps" />} htmlFor="set-reps">
+                    <Input id="set-reps" big type="number" inputMode="numeric" min={1} required
+                      value={reps} onChange={(e) => setReps(e.target.value)} placeholder="0" compact />
+                  </Field>
+                  <Field label="RIR" htmlFor="set-rir">
+                    <Input id="set-rir" big type="number" inputMode="numeric" min={0} max={5}
+                      value={rir} onChange={(e) => setRir(e.target.value)} placeholder="–" compact />
+                  </Field>
+                </div>
+
+                <Field label={<><Text ro="Notițe" en="Notes" /> <span className="font-normal opacity-70"><Text ro="(opțional)" en="(optional)" /></span></>} htmlFor="set-notes">
+                  <Input id="set-notes" type="text" maxLength={99} value={notes} onChange={(e) => setNotes(e.target.value)}
+                    placeholder={t("Ex: Scaunul la 3...", "E.g. Seat at 3...")} />
+                </Field>
+
+                <Button type="submit" icon={Plus} className="w-full">
+                  <Text ro="Adaugă setul" en="Add set" />
+                </Button>
+                <RestTimerSettings timer={restTimer} />
+              </Card>
+            </form>
           )}
-          <IconButton icon={Square} label={t("Resetează cronometrul", "Reset timer")} onClick={resetTimer} />
+
+          {mode === "cardio" && (
+            <form onSubmit={handleAddCardio}>
+              <Card>
+                <Field label={<Text ro="Activitate (LISS / HIIT)" en="Activity (LISS / HIIT)" />}>
+                  <Select
+                    title={t("Activitate", "Activity")}
+                    value={cardioActivity}
+                    onChange={setCardioActivity}
+                    options={CARDIO_ACTIVITIES.map((act) => ({ value: act, label: cardioName(act, language) }))}
+                  />
+                </Field>
+                <Field label={<Text ro="Durată (minute)" en="Duration (minutes)" />} htmlFor="cardio-duration">
+                  <Input id="cardio-duration" big type="number" inputMode="numeric" min={1} required
+                    value={cardioDuration} onChange={(e) => setCardioDuration(e.target.value)} placeholder={t("ex: 30", "e.g. 30")} />
+                </Field>
+                <Button type="submit" icon={Plus} className="w-full">
+                  <Text ro="Adaugă activitatea" en="Add activity" />
+                </Button>
+              </Card>
+            </form>
+          )}
         </div>
-      </section>
 
-      {mode === "strength" && (
-        <form onSubmit={handleAddSet}>
-          <Card>
-            <Field label={<Text ro="Împărțire" en="Split" />}>
-              <Select
-                title={t("Împărțire", "Split")}
-                value={split}
-                onChange={(value) => {
-                  const nextSplit = value as Split;
-                  setSplit(nextSplit);
-                  const nextList = getExercisesForSplit(nextSplit);
-                  if (nextList[0]) setExercise(nextList[0]);
-                }}
-                options={SPLITS.map((s) => ({ value: s, label: workoutLabelText(s, t) }))}
-              />
-            </Field>
+        <div className="flex min-w-0 flex-col gap-3.5 lg:sticky lg:top-6">
+          <div className="flex items-center justify-between gap-2 px-0.5">
+            <Eyebrow>
+              <Text ro="Sesiunea curentă" en="Current session" />
+            </Eyebrow>
+            <span className="font-mono text-[11px] font-semibold text-muted tabular-nums">
+              {mode === "strength"
+                ? `${sessionSets.length} ${t("seturi", "sets")}`
+                : `${cardioEntries.length} ${t("intrări", "entries")}`}
+            </span>
+          </div>
 
-            <div className="flex flex-col gap-2">
-              <ExerciseCombobox key={split} exercises={availableExercises} value={exercise} onChange={setExercise} />
-              {activePlannedExercise && (
-                <p className="flex w-fit items-center gap-1.5 rounded-sm bg-ice-soft px-3 py-1.5 text-[13px] font-semibold text-ice-text">
-                  <Target className="size-3.5 shrink-0" />
-                  {t("Țintă antrenor", "Coach target")}: {formatExerciseTarget(activePlannedExercise, format, t)}
-                </p>
-              )}
-              {exerciseHint && (
-                <p className={`flex w-fit items-center gap-1.5 rounded-sm px-3 py-1.5 text-[13px] font-semibold ${
-                  exerciseHint.includes(t("Exercițiu nou", "New exercise")) ? "bg-inner text-muted" : "bg-lime-soft text-lime-text"}`}>
-                  {latestRecord && <Trophy className="size-3.5 shrink-0" />}
-                  {exerciseHint}
-                </p>
-              )}
-              {recordHint && (
-                <p className="flex w-fit items-center gap-1.5 rounded-sm bg-inner px-3 py-1.5 text-[13px] font-semibold text-soft">
-                  <Trophy className="size-3.5 shrink-0" />
-                  {recordHint}
-                </p>
-              )}
-              {plateauHint && (
-                <p role="status" className="flex w-fit items-start gap-1.5 rounded-sm bg-gold-soft px-3 py-1.5 text-[13px] font-semibold text-gold-text">
-                  <Hourglass className="mt-0.5 size-3.5 shrink-0" />
-                  {plateauHint}
-                </p>
-              )}
-              {recommendedPerformance && (
-                <p className={`flex w-fit items-center gap-1.5 rounded-sm px-3 py-1.5 text-[13px] font-semibold ${
-                  recommendedIsNew ? "bg-inner text-muted" : "bg-lime-soft text-lime-text"}`}>
-                  {recommendedPerformance}
-                </p>
-              )}
-            </div>
+          {mode === "strength" ? (
+            <SetRows
+              rows={sessionSets.map((s, index) => ({
+                key: s.id, ordinal: ordinals[index], exercise: s.exercise, weightKg: s.weight, reps: s.reps,
+                rir: s.rir, setType: s.setType, notes: s.notes, record: personalRecords.has(s.id),
+              }))}
+              onRemove={(key) => setSessionSets((prev) => prev.filter((x) => x.id !== key))}
+              empty={t("Niciun set încă. Adaugă primul set din panoul din stânga.", "No sets yet. Log your first set to build this session.")}
+            />
+          ) : (
+            <CardioRows
+              rows={cardioEntries.map((c) => ({ key: c.id, activity: c.activity, durationMin: c.durationMin }))}
+              onRemove={(key) => setCardioEntries((prev) => prev.filter((x) => x.id !== key))}
+              empty={t("Nicio activitate încă.", "No activities yet.")}
+            />
+          )}
 
-            <div className="grid grid-cols-4 gap-2">
-              <Field label={<Text ro="Set" en="Set" />} htmlFor="set-number">
-                <Input id="set-number" center type="number" readOnly aria-readonly="true"
-                  value={sessionSets.filter((s) => s.exercise === exercise).length + 1} compact />
-              </Field>
-              <Field label={unit} htmlFor="set-weight">
-                <Input id="set-weight" big type="number" inputMode="decimal" step="0.5" min={0} max={Math.floor(toUnit(10000))}
-                  value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="0" compact />
-              </Field>
-              <Field label={<Text ro="Repetări" en="Reps" />} htmlFor="set-reps">
-                <Input id="set-reps" big type="number" inputMode="numeric" min={1} required
-                  value={reps} onChange={(e) => setReps(e.target.value)} placeholder="0" compact />
-              </Field>
-              <Field label="RIR" htmlFor="set-rir">
-                <Input id="set-rir" big type="number" inputMode="numeric" min={0} max={5}
-                  value={rir} onChange={(e) => setRir(e.target.value)} placeholder="–" compact />
-              </Field>
-            </div>
+          {error && <Message>{error}</Message>}
 
-            <Field label={<Text ro="Tip set" en="Set type" />}>
-              <Select
-                title={t("Tip set", "Set type")}
-                value={setType}
-                onChange={(value) => setSetType(value as SetType)}
-                options={SET_TYPES.map((type) => ({ value: type, label: workoutLabelText(type, t) }))}
-              />
-            </Field>
-
-            <Field label={<><Text ro="Notițe" en="Notes" /> <span className="font-normal opacity-70"><Text ro="(opțional)" en="(optional)" /></span></>} htmlFor="set-notes">
-              <Input id="set-notes" type="text" maxLength={99} value={notes} onChange={(e) => setNotes(e.target.value)}
-                placeholder={t("Ex: Scaunul la 3...", "E.g. Seat at 3...")} />
-            </Field>
-
-            <Button type="submit" variant="secondary" icon={Plus}>
-              <Text ro="Adaugă setul" en="Add set" />
+          {hasEntries && (
+            <Button large icon={Save} onClick={handleFinish} busy={isSaving || saveLocked} className="mt-1 w-full">
+              <Text ro="Finalizează antrenamentul" en="Finish workout" />
             </Button>
-            <RestTimerSettings timer={restTimer} />
-          </Card>
-        </form>
-      )}
-
-      {mode === "cardio" && (
-        <form onSubmit={handleAddCardio}>
-          <Card>
-            <Field label={<Text ro="Activitate (LISS / HIIT)" en="Activity (LISS / HIIT)" />}>
-              <Select
-                title={t("Activitate", "Activity")}
-                value={cardioActivity}
-                onChange={setCardioActivity}
-                options={CARDIO_ACTIVITIES.map((act) => ({ value: act, label: cardioName(act, language) }))}
-              />
-            </Field>
-            <Field label={<Text ro="Durată (minute)" en="Duration (minutes)" />} htmlFor="cardio-duration">
-              <Input id="cardio-duration" big type="number" inputMode="numeric" min={1} required
-                value={cardioDuration} onChange={(e) => setCardioDuration(e.target.value)} placeholder={t("ex: 30", "e.g. 30")} />
-            </Field>
-            <Button type="submit" variant="secondary" icon={Plus}>
-              <Text ro="Adaugă activitatea" en="Add activity" />
-            </Button>
-          </Card>
-        </form>
-      )}
-      </div>
-
-      <div className="flex min-w-0 flex-col gap-4 lg:gap-5">
-      <h2 className="mt-2 pl-0.5 text-[13px] font-medium text-muted lg:mt-0">
-        <Text ro="Sesiunea curentă" en="Current session" />
-      </h2>
-      {mode === "strength" ? (
-        <SetRows
-          rows={sessionSets.map((s, index) => ({
-            key: s.id, ordinal: ordinals[index], exercise: s.exercise, weightKg: s.weight, reps: s.reps,
-            rir: s.rir, setType: s.setType, notes: s.notes, record: personalRecords.has(s.id),
-          }))}
-          onRemove={(key) => setSessionSets((prev) => prev.filter((x) => x.id !== key))}
-          empty={t("Niciun set încă. Adaugă primul set mai sus.", "No sets yet. Add your first set above.")}
-        />
-      ) : (
-        <CardioRows
-          rows={cardioEntries.map((c) => ({ key: c.id, activity: c.activity, durationMin: c.durationMin }))}
-          onRemove={(key) => setCardioEntries((prev) => prev.filter((x) => x.id !== key))}
-          empty={t("Nicio activitate încă.", "No activities yet.")}
-        />
-      )}
-
-      {error && <Message>{error}</Message>}
-
-      {hasEntries && (
-        <Button large icon={Save} onClick={handleFinish} busy={isSaving || saveLocked} className="mt-4">
-          <Text ro="Finalizează antrenamentul" en="Finish workout" />
-        </Button>
-      )}
-      </div>
+          )}
+        </div>
       </div>
       <RestTimerBar timer={restTimer} />
       {finished && (

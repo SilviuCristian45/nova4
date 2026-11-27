@@ -1,3 +1,14 @@
+import Link from "next/link";
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Dumbbell,
+  Flame,
+  MessageSquare,
+  Pencil,
+  Plus,
+} from "lucide-react";
 import { displayOrdinals } from "@/lib/set-numbering";
 import { Text } from "@/app/components/language-provider";
 import { WorkoutLabel } from "@/app/components/workout-label";
@@ -5,19 +16,28 @@ import { getLanguage } from "@/app/language";
 import { CardioName, ExerciseName } from "@/app/components/exercise-name";
 import { ExerciseGifButton } from "@/app/components/exercise-gif";
 import { getWeightFormatter } from "@/app/units";
-import Link from "next/link";
-import { Dumbbell, ChevronDown, Flame, ChevronLeft, ChevronRight, MessageSquare, Pencil } from "lucide-react";
 import { getSessionUser, serverApi } from "@/lib/api/server";
 import { DeleteWorkoutButton } from "./delete-button";
 import { SetTypeBadge } from "@/app/components/workout-parts";
 import { WorkoutFeedbackThread } from "@/app/components/workout-feedback";
 import type { FeedbackThreadItem } from "@/app/feedback/actions";
 import type { FeedbackReaction } from "@/lib/coach/types";
-import { Badge, Card, Columns, Empty, Field, Message, Screen, buttonClass, iconButtonClass, inputClass } from "@/app/components/ui";
+import {
+  Badge,
+  Card,
+  Columns,
+  Empty,
+  Eyebrow,
+  Message,
+  Screen,
+  buttonClass,
+  cx,
+  iconButtonClass,
+} from "@/app/components/ui";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-const PAGE_SIZE = 5;
+const PAGE_SIZE = 6;
 
 interface ApiWorkout {
   id: string;
@@ -69,6 +89,26 @@ function calculateWeeklyStreak(workouts: { performedOn: string }[]) {
   return streak;
 }
 
+function isoDaysAgo(base: Date, days: number): string {
+  const d = new Date(base);
+  d.setDate(d.getDate() - days);
+  return d.toISOString().split("T")[0];
+}
+
+function topSetOf(sets: ApiWorkout["sets"]): ApiWorkout["sets"][number] | null {
+  let best: ApiWorkout["sets"][number] | null = null;
+  let bestScore = -1;
+  for (const s of sets) {
+    const w = Number(s.weight) || 0;
+    const score = w > 0 ? w * (1 + s.reps / 30) : s.reps;
+    if (score > bestScore) {
+      bestScore = score;
+      best = s;
+    }
+  }
+  return best;
+}
+
 export default async function HistoryPage({
   searchParams,
 }: {
@@ -81,7 +121,7 @@ export default async function HistoryPage({
   if (!user) {
     return (
       <Screen back={false} className="min-h-dvh justify-center text-center">
-        <h1 className="text-[28px] font-bold tracking-[-0.8px]">
+        <h1 className="text-[28px] font-bold tracking-[-0.03em]">
           <Text ro="Sesiune expirată" en="Session expired" />
         </h1>
         <p className="text-muted">
@@ -90,7 +130,7 @@ export default async function HistoryPage({
             en="Please sign in again to view your history."
           />
         </p>
-        <Link href="/login" className={buttonClass()}>
+        <Link href="/login" className={buttonClass({ className: "mx-auto" })}>
           <Text ro="Mergi la login" en="Go to sign in" />
         </Link>
       </Screen>
@@ -99,10 +139,9 @@ export default async function HistoryPage({
 
   const params = await searchParams;
   const today = new Date();
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(today.getDate() - 30);
-  const startDate = params.startDate || thirtyDaysAgo.toISOString().split("T")[0];
-  const endDate = params.endDate || today.toISOString().split("T")[0];
+  const todayIso = today.toISOString().split("T")[0];
+  const startDate = params.startDate || isoDaysAgo(today, 30);
+  const endDate = params.endDate || todayIso;
   const parsedPage = Number(params.page);
   const currentPage = Number.isSafeInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1;
 
@@ -128,7 +167,7 @@ export default async function HistoryPage({
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return (
-      <Screen title={<Text ro="Istoric" en="History" />}>
+      <Screen title={<Text ro="Istoric antrenamente" en="Workout history" />}>
         <Message>
           <Text ro="Eroare la încărcare:" en="Database error:" /> {message}
         </Message>
@@ -137,9 +176,17 @@ export default async function HistoryPage({
   }
 
   const workouts = pageRes.items;
+  const totalInRange = pageRes.total ?? 0;
   const streak = calculateWeeklyStreak(allDates);
-  const totalPages = Math.ceil((pageRes.total ?? 0) / PAGE_SIZE);
+  const totalPages = Math.ceil(totalInRange / PAGE_SIZE);
   const pageHref = (page: number) => `?${new URLSearchParams({ page: String(page), startDate, endDate })}`;
+
+  const presets = [
+    { label: t("7Z", "7D"), from: isoDaysAgo(today, 7) },
+    { label: t("30Z", "30D"), from: isoDaysAgo(today, 30) },
+    { label: t("90Z", "90D"), from: isoDaysAgo(today, 90) },
+    { label: t("1A", "1Y"), from: isoDaysAgo(today, 365) },
+  ];
 
   const hasActiveCoach = enrollments.some((e) => e.status === "active");
   const feedbackByWorkout = new Map<string, FeedbackThreadItem[]>();
@@ -171,31 +218,91 @@ export default async function HistoryPage({
 
   return (
     <Screen
-      title={<Text ro="Istoric" en="History" />}
+      title={<Text ro="Istoric antrenamente" en="Workout history" />}
       right={
-        streak > 0 ? (
-          <Badge tone="coral" className="gap-1 text-[13px]">
-            <Flame className="size-3.5" />
-            {streak} <Text ro="săpt." en="wk" />
-          </Badge>
-        ) : undefined
+        <div className="flex items-center gap-2">
+          {streak > 0 && (
+            <Badge tone="coral" className="gap-1">
+              <Flame className="size-3" />
+              {streak} <Text ro="săpt." en="wk" />
+            </Badge>
+          )}
+          <Link href="/insert" className={buttonClass({ small: true, className: "hidden sm:inline-flex" })}>
+            <Plus className="size-3.5" strokeWidth={2.4} />
+            <Text ro="Antrenament nou" en="Log workout" />
+          </Link>
+        </div>
       }
     >
+      {/* Compact filter toolbar with quick range presets */}
       <form method="GET">
-        <Card>
-          <div className="grid grid-cols-2 gap-2.5">
-            <Field label={<Text ro="De la" en="From" />} htmlFor="history-start">
-              <input id="history-start" type="date" name="startDate" defaultValue={startDate} className={inputClass()} />
-            </Field>
-            <Field label={<Text ro="Până la" en="To" />} htmlFor="history-end">
-              <input id="history-end" type="date" name="endDate" defaultValue={endDate} className={inputClass()} />
-            </Field>
+        <Card className="gap-3.5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <Eyebrow>{t("Perioadă rapidă", "Quick range")}</Eyebrow>
+              <span className="font-mono text-[11px] font-semibold text-muted tabular-nums lg:hidden">
+                {totalInRange} {t(totalInRange === 1 ? "sesiune" : "sesiuni", totalInRange === 1 ? "session" : "sessions")}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {presets.map((preset) => {
+                const active = startDate === preset.from && endDate === todayIso;
+                return (
+                  <Link
+                    key={preset.label}
+                    href={`?${new URLSearchParams({ startDate: preset.from, endDate: todayIso })}`}
+                    className={cx(
+                      "inline-flex h-9 items-center justify-center rounded-sm border px-3 font-mono text-[12px] font-semibold transition-colors",
+                      active
+                        ? "border-transparent bg-lime text-on-solid"
+                        : "border-card-border bg-inner text-soft hover:border-card-border-strong hover:text-foreground",
+                    )}
+                  >
+                    {preset.label}
+                  </Link>
+                );
+              })}
+            </div>
           </div>
-          <button type="submit" className={buttonClass({ variant: "secondary" })}>
-            <Text ro="Aplică filtrele" en="Apply filters" />
-          </button>
+
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="flex min-w-[130px] flex-1 flex-col gap-1 sm:flex-none">
+              <label htmlFor="history-start" className="font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">
+                <Text ro="De la" en="From" />
+              </label>
+              <input
+                id="history-start"
+                type="date"
+                name="startDate"
+                defaultValue={startDate}
+                className="h-9 rounded-sm border border-card-border bg-inner px-2.5 font-mono text-[12px] text-foreground outline-none transition-colors hover:border-card-border-strong focus:border-lime"
+              />
+            </div>
+            <div className="flex min-w-[130px] flex-1 flex-col gap-1 sm:flex-none">
+              <label htmlFor="history-end" className="font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">
+                <Text ro="Până la" en="To" />
+              </label>
+              <input
+                id="history-end"
+                type="date"
+                name="endDate"
+                defaultValue={endDate}
+                className="h-9 rounded-sm border border-card-border bg-inner px-2.5 font-mono text-[12px] text-foreground outline-none transition-colors hover:border-card-border-strong focus:border-lime"
+              />
+            </div>
+            <button type="submit" className={buttonClass({ variant: "secondary", small: true })}>
+              <Text ro="Aplică" en="Apply" />
+            </button>
+          </div>
         </Card>
       </form>
+
+      <div className="hidden items-center justify-between px-0.5 lg:flex">
+        <Eyebrow>{t("Sesiuni înregistrate", "Logged sessions")}</Eyebrow>
+        <span className="font-mono text-[11.5px] font-semibold text-muted tabular-nums">
+          {totalInRange} {t(totalInRange === 1 ? "sesiune în interval" : "sesiuni în interval", totalInRange === 1 ? "session in range" : "sessions in range")}
+        </span>
+      </div>
 
       {!workouts.length ? (
         <Empty icon={Dumbbell}>
@@ -215,103 +322,149 @@ export default async function HistoryPage({
               year: "numeric",
             });
             const groupedSets: Record<string, ApiWorkout["sets"]> = {};
+            let totalVolumeKg = 0;
             if (!isCardio) {
               for (const set of workout.sets ?? []) {
                 (groupedSets[set.exercise] ??= []).push(set);
+                if (Number(set.weight) > 0) {
+                  totalVolumeKg += Number(set.weight) * Number(set.reps || 0);
+                }
               }
             }
+            const totalCardioMin = isCardio
+              ? (workout.cardio ?? []).reduce((sum, c) => sum + Number(c.durationMin || 0), 0)
+              : 0;
+            const exerciseCount = Object.keys(groupedSets).length;
             const feedbackItems = feedbackByWorkout.get(workout.id) ?? [];
+
             return (
               <Card key={workout.id} padded={false}>
-                <div className="flex items-center gap-2 py-3 pl-[18px] pr-2">
+                <div className="flex items-start gap-2.5 px-5 py-4 pr-3">
+                  <span
+                    aria-hidden="true"
+                    className={cx("mt-1.5 size-2.5 shrink-0 rounded-full", isCardio ? "bg-coral" : "bg-lime")}
+                  />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="break-words text-[17px] font-semibold">
+                      <h2 className="break-words text-[17px] font-bold tracking-[-0.02em]">
                         {isCardio ? t("Sesiune cardio", "Cardio session") : <WorkoutLabel value={workout.split} />}
                       </h2>
                       {feedbackItems.length > 0 && (
                         <Badge tone="ice" className="gap-1">
                           <MessageSquare className="size-3" />
-                          <Text ro="Feedback" en="Feedback" /> ({feedbackItems.length})
+                          {feedbackItems.length}
                         </Badge>
                       )}
                     </div>
-                    <p className="text-[13px] text-muted">
-                      {date}
-                      {!isCardio && (
+                    <p className="mt-0.5 font-mono text-[11.5px] text-muted">{date}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5 font-mono text-[11px] text-soft tabular-nums">
+                      {isCardio ? (
+                        <span className="rounded-sm bg-coral-soft px-2 py-0.5 font-semibold text-coral-text">
+                          {totalCardioMin} min
+                        </span>
+                      ) : (
                         <>
-                          {" "}
-                          · <span className="tabular-nums">{workout.sets?.length ?? 0}</span>{" "}
-                          <Text ro="seturi" en="sets" />
+                          <span className="rounded-sm border border-card-border bg-inner px-2 py-0.5">
+                            {workout.sets?.length ?? 0} {t("seturi", "sets")}
+                          </span>
+                          <span className="rounded-sm border border-card-border bg-inner px-2 py-0.5">
+                            {exerciseCount} {t(exerciseCount === 1 ? "exercițiu" : "exerciții", exerciseCount === 1 ? "exercise" : "exercises")}
+                          </span>
+                          {totalVolumeKg > 0 && (
+                            <span className="rounded-sm border border-card-border bg-inner px-2 py-0.5">
+                              {format(Math.round(totalVolumeKg))}
+                            </span>
+                          )}
                         </>
                       )}
-                    </p>
+                    </div>
                   </div>
-                  <Link
-                    href={`/edit/${workout.id}`}
-                    aria-label={t("Editează antrenament", "Edit workout")}
-                    title={t("Editează antrenament", "Edit workout")}
-                    className={iconButtonClass({ plain: true })}
-                  >
-                    <Pencil className="size-5" />
-                  </Link>
-                  <DeleteWorkoutButton id={workout.id} />
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <Link
+                      href={`/edit/${workout.id}`}
+                      aria-label={t("Editează antrenament", "Edit workout")}
+                      title={t("Editează antrenament", "Edit workout")}
+                      className={iconButtonClass({ plain: true })}
+                    >
+                      <Pencil className="size-4" />
+                    </Link>
+                    <DeleteWorkoutButton id={workout.id} />
+                  </div>
                 </div>
+
                 {isCardio
                   ? workout.cardio?.map((session) => (
                       <div
                         key={session.id}
-                        className="flex items-center justify-between gap-3 border-t border-line px-[18px] py-3.5"
+                        className="flex items-center justify-between gap-3 border-t border-line px-5 py-3.5 transition-colors hover:bg-inner/40"
                       >
-                        <span className="font-medium">
+                        <span className="text-[14px] font-semibold">
                           <CardioName id={session.activity} />
                         </span>
-                        <span className="text-[17px] font-semibold text-coral-text tabular-nums">
-                          {session.durationMin} <span className="text-[13px] font-normal text-muted">min</span>
+                        <span className="font-mono text-[15px] font-bold text-coral-text tabular-nums">
+                          {session.durationMin} <span className="font-sans text-[12px] font-normal text-muted">min</span>
                         </span>
                       </div>
                     ))
-                  : Object.entries(groupedSets).map(([exercise, sets]) => (
-                      <details key={exercise} className="group border-t border-line">
-                        <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-[18px] py-3 [&::-webkit-details-marker]:hidden">
-                          <span className="min-w-0 flex-1 font-medium">
-                            <ExerciseName id={exercise} />{" "}
-                            <span className="font-normal text-muted">
-                              · {sets.length} <Text ro="seturi" en="sets" />
-                            </span>
-                          </span>
-                          <div className="flex shrink-0 items-center gap-1">
-                            <ExerciseGifButton exercise={exercise} compact />
-                            <ChevronDown className="size-4 shrink-0 text-muted transition-transform group-open:rotate-180" />
-                          </div>
-                        </summary>
-                        <div className="mx-[18px] mb-3 flex flex-col rounded-md bg-inner">
-                          {sets.map((set, setIndex) => (
-                            <div
-                              key={set.id}
-                              className="flex flex-col gap-1 border-b border-line px-3 py-2.5 last:border-0"
-                            >
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="w-5 text-sm text-muted tabular-nums">
-                                  {displayOrdinals(sets.map((x) => ({ exercise: x.exercise, order: x.setNumber })))[
-                                    setIndex
-                                  ]}
+                  : Object.entries(groupedSets).map(([exercise, sets]) => {
+                      const best = topSetOf(sets);
+                      const ordinals = displayOrdinals(sets.map((x) => ({ exercise: x.exercise, order: x.setNumber })));
+                      return (
+                        <details key={exercise} className="group border-t border-line">
+                          <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-2 px-5 py-3 transition-colors hover:bg-inner/45 [&::-webkit-details-marker]:hidden">
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-[14px] font-semibold text-foreground">
+                                <ExerciseName id={exercise} />
+                              </p>
+                              <p className="mt-0.5 flex flex-wrap items-center gap-x-2 font-mono text-[11px] text-muted tabular-nums">
+                                <span>
+                                  {sets.length} {t(sets.length === 1 ? "set" : "seturi", sets.length === 1 ? "set" : "sets")}
                                 </span>
-                                <span className="font-semibold tabular-nums">
-                                  {set.weight > 0 ? `${format(Number(set.weight))} × ` : ""}
-                                  {set.reps}
-                                </span>
-                                {set.rir !== null && <span className="text-[13px] text-muted">RIR {set.rir}</span>}
-                                <SetTypeBadge type={set.setType} />
-                              </div>
-                              {set.notes && <p className="break-words pl-7 text-[13px] text-muted">{set.notes}</p>}
+                                {best && (
+                                  <span className="text-soft">
+                                    · {t("top", "best")}{" "}
+                                    {Number(best.weight) > 0 ? `${format(Number(best.weight))} × ` : ""}
+                                    {best.reps}
+                                  </span>
+                                )}
+                              </p>
                             </div>
-                          ))}
-                        </div>
-                      </details>
-                    ))}
+                            <div className="flex shrink-0 items-center gap-1">
+                              <ExerciseGifButton exercise={exercise} compact />
+                              <ChevronDown className="size-4 shrink-0 text-muted transition-transform group-open:rotate-180" />
+                            </div>
+                          </summary>
+                          <div className="mx-4 mb-3.5 flex flex-col overflow-hidden rounded-md border border-card-border bg-inner">
+                            {sets.map((set, setIndex) => (
+                              <div
+                                key={set.id}
+                                className="flex flex-col gap-1 border-b border-line px-3 py-2.5 last:border-0"
+                              >
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="w-5 font-mono text-[11.5px] font-semibold text-muted tabular-nums">
+                                    #{ordinals[setIndex]}
+                                  </span>
+                                  <span className="font-mono text-[13.5px] font-bold tabular-nums">
+                                    {set.weight > 0 ? `${format(Number(set.weight))} × ` : ""}
+                                    {set.reps}
+                                  </span>
+                                  {set.rir !== null && (
+                                    <span className="rounded-sm bg-card px-1.5 py-0.5 font-mono text-[10.5px] text-muted tabular-nums">
+                                      RIR {set.rir}
+                                    </span>
+                                  )}
+                                  <SetTypeBadge type={set.setType} />
+                                </div>
+                                {set.notes && <p className="break-words pl-7 text-[12.5px] text-muted">{set.notes}</p>}
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      );
+                    })}
+
                 {(feedbackItems.length > 0 || hasActiveCoach) && (
-                  <div className="border-t border-line px-[18px] py-3">
+                  <div className="border-t border-line px-5 py-3">
                     <WorkoutFeedbackThread
                       workoutId={workout.id}
                       currentUserId={user.id}
@@ -328,8 +481,9 @@ export default async function HistoryPage({
           })}
         </Columns>
       )}
+
       {totalPages > 1 && (
-        <nav aria-label={t("Paginare", "Pagination")} className="mt-2 flex items-center justify-between gap-2">
+        <nav aria-label={t("Paginare", "Pagination")} className="mt-1 flex items-center justify-between gap-2">
           <Link
             href={pageHref(Math.max(1, currentPage - 1))}
             aria-disabled={currentPage <= 1}
@@ -338,8 +492,8 @@ export default async function HistoryPage({
             <ChevronLeft className="size-4" />
             <Text ro="Înapoi" en="Back" />
           </Link>
-          <span className="text-sm text-muted tabular-nums">
-            <Text ro="Pagina" en="Page" /> {currentPage} <Text ro="din" en="of" /> {totalPages}
+          <span className="font-mono text-[12px] font-medium text-muted tabular-nums">
+            {currentPage} / {totalPages}
           </span>
           <Link
             href={pageHref(Math.min(totalPages, currentPage + 1))}
