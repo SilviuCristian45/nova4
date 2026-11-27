@@ -17,6 +17,7 @@ export { MealTemplateEntity } from "./meal-template.entity";
 export { UserTargetEntity } from "./user-target.entity";
 export { ProgressPhotoEntity } from "./progress-photo.entity";
 export { OfflineSyncReceiptEntity } from "./offline-sync-receipt.entity";
+export { SyncChangeEntity } from "./sync-change.entity";
 export { NotificationEntity } from "./notification.entity";
 export { ProgramEntity } from "./program.entity";
 export { ProgramWorkoutEntity } from "./program-workout.entity";

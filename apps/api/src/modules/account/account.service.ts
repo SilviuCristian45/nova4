@@ -624,6 +624,7 @@ export class AccountService {
       await manager.query(`DELETE FROM public.gym_checkins WHERE user_id = $1`, [userId]);
       await manager.query(`DELETE FROM public.gym_subscriptions WHERE user_id = $1`, [userId]);
       await manager.query(`DELETE FROM public.gym_members WHERE user_id = $1`, [userId]);
+      await manager.query(`DELETE FROM public.sync_changes WHERE user_id = $1`, [userId]);
     });
 
     return { success: true };

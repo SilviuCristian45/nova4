@@ -1,9 +1,9 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Req, Res } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Req, Res } from "@nestjs/common";
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from "@nestjs/swagger";
 import type { Request, Response } from "express";
 import type { AuthenticatedUser } from "../../common/auth/auth-user.type";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
-import { CreatePhotoDto, RequestPhotoUploadDto } from "./dto/photo.dto";
+import { CreatePhotoDto, RequestPhotoUploadDto, UpdatePhotoDto } from "./dto/photo.dto";
 import { PhotosService } from "./photos.service";
 
 @ApiTags("Photos")
@@ -53,6 +53,12 @@ export class PhotosController {
   @ApiOperation({ summary: "Register progress photo metadata after uploading the JPEG to storage" })
   create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreatePhotoDto) {
     return this.photosService.create(user.userId, dto);
+  }
+
+  @Patch(":id")
+  @ApiOperation({ summary: "Update progress photo metadata (date, pose, note)" })
+  update(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string, @Body() dto: UpdatePhotoDto) {
+    return this.photosService.update(user.userId, id, dto);
   }
 
   @Delete(":id")

@@ -41,6 +41,7 @@ const EXPECTED_TABLES = [
   "programs",
   "progress_photos",
   "refresh_tokens",
+  "sync_changes",
   "user_targets",
   "users",
   "weekly_checkins",

@@ -3,11 +3,36 @@ import { IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min
 import { PHOTO_MAX_BYTES, PHOTO_NOTE_MAX, PHOTO_POSES, type PhotoPose } from "@replog/shared";
 
 export class RequestPhotoUploadDto {
+  @ApiPropertyOptional({ description: "Optional client-generated UUID for idempotent sync uploads" })
+  @IsOptional()
+  @IsUUID()
+  id?: string;
+
   @ApiProperty({ example: 350000, minimum: 1, maximum: PHOTO_MAX_BYTES })
   @IsInt()
   @Min(1)
   @Max(PHOTO_MAX_BYTES)
   sizeBytes: number;
+}
+
+export class UpdatePhotoDto {
+  @ApiPropertyOptional({ example: "2026-11-25" })
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: "takenOn must be YYYY-MM-DD" })
+  takenOn?: string;
+
+  @ApiPropertyOptional({ enum: PHOTO_POSES })
+  @IsOptional()
+  @IsIn(PHOTO_POSES)
+  pose?: PhotoPose;
+
+  @ApiPropertyOptional({ maxLength: PHOTO_NOTE_MAX, nullable: true })
+  @IsOptional()
+  @ValidateIf((_o, v) => v !== null)
+  @IsString()
+  @MaxLength(PHOTO_NOTE_MAX)
+  note?: string | null;
 }
 
 export class CreatePhotoDto {

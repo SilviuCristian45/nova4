@@ -21,6 +21,7 @@ import { NotificationsModule } from "./modules/notifications/notifications.modul
 import { OfflineModule } from "./modules/offline/offline.module";
 import { PhotosModule } from "./modules/photos/photos.module";
 import { ProfilesModule } from "./modules/profiles/profiles.module";
+import { SyncModule } from "./modules/sync/sync.module";
 import { WorkoutsModule } from "./modules/workouts/workouts.module";
 import { StorageModule } from "./storage/storage.module";
 
@@ -53,6 +54,7 @@ import { StorageModule } from "./storage/storage.module";
     MealsModule,
     PhotosModule,
     OfflineModule,
+    SyncModule,
     NotificationsModule,
     CoachModule,
     MealPlansModule,

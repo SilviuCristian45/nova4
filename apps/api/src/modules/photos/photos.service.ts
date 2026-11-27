@@ -11,7 +11,7 @@ import {
 import { ProgressPhotoEntity } from "../../database/entities";
 import { PHOTO_CRYPTO_OVERHEAD, isJpegBuffer } from "../../storage/photo-crypto";
 import { StorageService } from "../../storage/storage.service";
-import type { CreatePhotoDto, RequestPhotoUploadDto } from "./dto/photo.dto";
+import type { CreatePhotoDto, RequestPhotoUploadDto, UpdatePhotoDto } from "./dto/photo.dto";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -33,7 +33,7 @@ export class PhotosService {
       throw new BadRequestException(`Photo limit reached (${PHOTO_MAX_PER_USER})`);
     }
 
-    const id = randomUUID().toLowerCase();
+    const id = dto.id ? dto.id.toLowerCase() : randomUUID().toLowerCase();
     const path = photoPath(userId, id);
 
     if (this.isEncryptedMode()) {
@@ -188,6 +188,45 @@ export class PhotosService {
       }
       throw err;
     }
+  }
+
+  async update(userId: string, idRaw: string, dto: UpdatePhotoDto) {
+    if (!UUID_REGEX.test(idRaw)) throw new NotFoundException("Photo not found");
+    const existing = await this.photosRepo.findOne({ where: { id: idRaw.toLowerCase(), userId } });
+    if (!existing) throw new NotFoundException("Photo not found");
+
+    if (dto.takenOn !== undefined) {
+      const tomorrow = new Date();
+      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+      if (!isMeasurementDate(dto.takenOn, tomorrow.toISOString().slice(0, 10))) {
+        throw new BadRequestException("Invalid photo date");
+      }
+      existing.takenOn = dto.takenOn;
+    }
+    if (dto.pose !== undefined) {
+      existing.pose = dto.pose;
+    }
+    if (dto.note !== undefined) {
+      existing.note = dto.note?.trim() || null;
+    }
+
+    const saved = await this.photosRepo.save(existing);
+    const encryptedMode = this.isEncryptedMode();
+    const bucket = this.storage.getProgressPhotosBucket();
+    const url = encryptedMode
+      ? `/api/v1/photos/${saved.id}/file`
+      : await this.storage.createPresignedDownloadUrl(bucket, saved.path, 600);
+
+    return {
+      id: saved.id,
+      takenOn: String(saved.takenOn).slice(0, 10),
+      pose: saved.pose,
+      note: saved.note ?? null,
+      path: saved.path,
+      sizeBytes: saved.sizeBytes,
+      createdAt: saved.createdAt instanceof Date ? saved.createdAt.toISOString() : String(saved.createdAt),
+      url,
+    };
   }
 
   async remove(userId: string, id: string): Promise<{ deleted: true }> {

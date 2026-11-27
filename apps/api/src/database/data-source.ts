@@ -27,6 +27,7 @@ import {
   MealTemplateEntity,
   NotificationEntity,
   OfflineSyncReceiptEntity,
+  SyncChangeEntity,
   ProfileEntity,
   ProgramEntity,
   ProgramWorkoutCardioEntity,
@@ -45,6 +46,8 @@ import {
 import { InitialSchema1764000000000 } from "./migrations/1764000000000-InitialSchema";
 import { AddUserDisabledAt1765000000000 } from "./migrations/1765000000000-AddUserDisabledAt";
 import { AddGymManagement1766000000000 } from "./migrations/1766000000000-AddGymManagement";
+import { AddSyncChanges1767000000000 } from "./migrations/1767000000000-AddSyncChanges";
+import { AddStage2SyncChanges1768000000000 } from "./migrations/1768000000000-AddStage2SyncChanges";
 
 export const DATABASE_ENTITIES = [
   UserEntity,
@@ -66,6 +69,7 @@ export const DATABASE_ENTITIES = [
   UserTargetEntity,
   ProgressPhotoEntity,
   OfflineSyncReceiptEntity,
+  SyncChangeEntity,
   NotificationEntity,
   ProgramEntity,
   ProgramWorkoutEntity,
@@ -93,6 +97,8 @@ export const DATABASE_MIGRATIONS = [
   InitialSchema1764000000000,
   AddUserDisabledAt1765000000000,
   AddGymManagement1766000000000,
+  AddSyncChanges1767000000000,
+  AddStage2SyncChanges1768000000000,
 ];
 
 export function buildDataSourceOptions(databaseUrl?: string): DataSourceOptions {
